@@ -15,6 +15,7 @@ import CreditCardList from "@/creditCards/CreditCardList";
 import IPOList from "@/ipo/IPOList";
 import NotificationList from "@/notifications/NotificationList";
 import ExportPage from "@/exports/ExportPage";
+import PersonList from "@/persons/PersonList";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="ipo" element={<IPOList />} />
               <Route path="notifications" element={<NotificationList />} />
               <Route path="exports" element={<ExportPage />} />
+              <Route path="family" element={<PersonList />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
