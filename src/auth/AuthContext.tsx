@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { settingsApi, hashPin } from '@/api/supabase-api';
 
-
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -11,7 +10,7 @@ interface AuthContextType {
   setNewPin: (pin: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 const SESSION_KEY = 'budget_planner_session';
 
@@ -22,11 +21,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAuth = useCallback(async () => {
     try {
-      // Check if PIN is configured
       const settings = await settingsApi.getSettings();
       setIsPinSet(!!settings?.pin_hash);
       
-      // Check session
       const session = localStorage.getItem(SESSION_KEY);
       if (session) {
         const { expiry } = JSON.parse(session);
@@ -61,7 +58,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Invalid PIN' };
       }
       
-      // Create session (24 hours)
       const expiry = new Date().getTime() + 24 * 60 * 60 * 1000;
       localStorage.setItem(SESSION_KEY, JSON.stringify({ expiry }));
       setIsAuthenticated(true);
@@ -78,7 +74,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await settingsApi.setPin(pinHash);
       setIsPinSet(true);
       
-      // Auto-login after setting PIN
       const expiry = new Date().getTime() + 24 * 60 * 60 * 1000;
       localStorage.setItem(SESSION_KEY, JSON.stringify({ expiry }));
       setIsAuthenticated(true);
@@ -94,8 +89,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthenticated(false);
   };
 
+  const value: AuthContextType = {
+    isAuthenticated,
+    isLoading,
+    isPinSet,
+    login,
+    logout,
+    setNewPin,
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, isPinSet, login, logout, setNewPin }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -103,7 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === null) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
