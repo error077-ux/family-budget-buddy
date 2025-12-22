@@ -21,11 +21,11 @@ const ExportPage: React.FC = () => {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   
   const [selected, setSelected] = useState({
-    transactions: true,
-    loans: true,
-    banks: true,
-    creditCards: true,
-    ipos: true,
+    transactions: false,
+    loans: false,
+    banks: false,
+    creditCards: false,
+    ipos: false,
     notifications: false,
   });
 
@@ -451,27 +451,45 @@ const ExportPage: React.FC = () => {
       <div className="card-finance p-6">
         <h3 className="text-lg font-semibold mb-4">Select Data to Export</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('transactions')}
+          >
             <Checkbox id="transactions" checked={selected.transactions} onCheckedChange={() => toggleSelection('transactions')} />
             <Label htmlFor="transactions" className="flex-1 cursor-pointer">Transactions</Label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('loans')}
+          >
             <Checkbox id="loans" checked={selected.loans} onCheckedChange={() => toggleSelection('loans')} />
             <Label htmlFor="loans" className="flex-1 cursor-pointer">Loans</Label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('banks')}
+          >
             <Checkbox id="banks" checked={selected.banks} onCheckedChange={() => toggleSelection('banks')} />
             <Label htmlFor="banks" className="flex-1 cursor-pointer">Bank Accounts</Label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('creditCards')}
+          >
             <Checkbox id="creditCards" checked={selected.creditCards} onCheckedChange={() => toggleSelection('creditCards')} />
             <Label htmlFor="creditCards" className="flex-1 cursor-pointer">Credit Cards</Label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('ipos')}
+          >
             <Checkbox id="ipos" checked={selected.ipos} onCheckedChange={() => toggleSelection('ipos')} />
             <Label htmlFor="ipos" className="flex-1 cursor-pointer">IPO Applications</Label>
           </div>
-          <div className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+          <div 
+            className="flex items-center space-x-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => toggleSelection('notifications')}
+          >
             <Checkbox id="notifications" checked={selected.notifications} onCheckedChange={() => toggleSelection('notifications')} />
             <Label htmlFor="notifications" className="flex-1 cursor-pointer">Notifications</Label>
           </div>
