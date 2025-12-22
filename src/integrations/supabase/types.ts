@@ -294,6 +294,45 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_sessions: {
+        Row: {
+          amount: number | null
+          bank_id: string | null
+          chat_id: number
+          created_at: string
+          description: string | null
+          expense_owner: string | null
+          id: string
+          source_type: string | null
+          step: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          bank_id?: string | null
+          chat_id: number
+          created_at?: string
+          description?: string | null
+          expense_owner?: string | null
+          id?: string
+          source_type?: string | null
+          step?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          bank_id?: string | null
+          chat_id?: number
+          created_at?: string
+          description?: string | null
+          expense_owner?: string | null
+          id?: string
+          source_type?: string | null
+          step?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           amount: number
