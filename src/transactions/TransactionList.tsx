@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search, UserPlus } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search, UserPlus, Camera, X, Image } from 'lucide-react';
 import { transactionsApi, banksApi, creditCardsApi, personsApi, type Transaction, type Bank, type CreditCard, type Person } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate, getTodayIST } from '@/utils/formatDate';
@@ -30,10 +30,13 @@ const TransactionList: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [addPersonDialogOpen, setAddPersonDialogOpen] = useState(false);
+  const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingBill, setUploadingBill] = useState(false);
   const [newPersonName, setNewPersonName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const [form, setForm] = useState({
@@ -148,6 +151,10 @@ const TransactionList: React.FC = () => {
     setSaving(true);
 
     try {
+      // Remove bill image if exists
+      if (selectedTx.bill_image_url) {
+        await transactionsApi.removeBillImage(selectedTx.id, selectedTx.bill_image_url);
+      }
       await transactionsApi.delete(selectedTx.id);
       toast({ title: 'Success', description: 'Transaction deleted' });
       setDeleteDialogOpen(false);
@@ -176,6 +183,59 @@ const TransactionList: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleBillUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTx) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Error', description: 'Please select an image file', variant: 'destructive' });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Error', description: 'Image must be less than 5MB', variant: 'destructive' });
+      return;
+    }
+
+    setUploadingBill(true);
+    try {
+      await transactionsApi.uploadBillImage(selectedTx.id, file);
+      toast({ title: 'Success', description: 'Bill image uploaded' });
+      setBillDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to upload bill', variant: 'destructive' });
+    } finally {
+      setUploadingBill(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveBill = async () => {
+    if (!selectedTx?.bill_image_url) return;
+
+    setUploadingBill(true);
+    try {
+      await transactionsApi.removeBillImage(selectedTx.id, selectedTx.bill_image_url);
+      toast({ title: 'Success', description: 'Bill image removed' });
+      setBillDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to remove bill', variant: 'destructive' });
+    } finally {
+      setUploadingBill(false);
+    }
+  };
+
+  const openBillDialog = (tx: Transaction) => {
+    setSelectedTx(tx);
+    setBillDialogOpen(true);
   };
 
   const filteredTransactions = transactions.filter(
@@ -207,10 +267,10 @@ const TransactionList: React.FC = () => {
       <div className="card-finance overflow-hidden">
         <div className="overflow-x-auto">
           <table className="table-finance">
-            <thead><tr><th>Date</th><th>Description</th><th>Owner</th><th>Bank</th><th className="text-right">Amount</th><th className="text-right">Actions</th></tr></thead>
+            <thead><tr><th>Date</th><th>Description</th><th>Owner</th><th>Bank</th><th>Bill</th><th className="text-right">Amount</th><th className="text-right">Actions</th></tr></thead>
             <tbody>
               {filteredTransactions.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-muted-foreground">No transactions found</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No transactions found</td></tr>
               ) : (
                 filteredTransactions.map((tx) => (
                   <tr key={tx.id}>
@@ -218,6 +278,19 @@ const TransactionList: React.FC = () => {
                     <td>{tx.description}{tx.created_loan_id && <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-warning/10 text-warning">Loan</span>}</td>
                     <td>{tx.expense_owner}</td>
                     <td>{tx.bank_name || '-'}</td>
+                    <td>
+                      <button
+                        onClick={() => openBillDialog(tx)}
+                        className={`p-2 rounded-lg transition-colors ${
+                          tx.bill_image_url 
+                            ? 'bg-success/10 text-success hover:bg-success/20' 
+                            : 'hover:bg-muted text-muted-foreground'
+                        }`}
+                        title={tx.bill_image_url ? 'View/Change Bill' : 'Add Bill'}
+                      >
+                        {tx.bill_image_url ? <Image className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
+                      </button>
+                    </td>
                     <td className="text-right mono text-destructive">-{formatMoney(tx.amount)}</td>
                     <td className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -303,6 +376,68 @@ const TransactionList: React.FC = () => {
               <Button type="submit" disabled={saving} className="flex-1">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedTx ? 'Update' : 'Add Transaction'}</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bill Image Dialog */}
+      <Dialog open={billDialogOpen} onOpenChange={setBillDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Bill Image</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            {selectedTx?.bill_image_url ? (
+              <div className="space-y-4">
+                <div className="relative rounded-lg overflow-hidden border">
+                  <img 
+                    src={selectedTx.bill_image_url} 
+                    alt="Bill" 
+                    className="w-full max-h-64 object-contain bg-muted"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => fileInputRef.current?.click()} 
+                    disabled={uploadingBill}
+                    className="flex-1 gap-2"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Replace
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleRemoveBill} 
+                    disabled={uploadingBill}
+                    className="flex-1 gap-2"
+                  >
+                    {uploadingBill ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+              >
+                <Camera className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground">Click to upload bill image</p>
+                <p className="text-xs text-muted-foreground mt-2">Max 5MB • JPG, PNG, WEBP</p>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleBillUpload}
+              className="hidden"
+            />
+            {uploadingBill && (
+              <div className="flex items-center justify-center gap-2 text-primary">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Uploading...</span>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

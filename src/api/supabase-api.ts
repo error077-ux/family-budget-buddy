@@ -31,6 +31,7 @@ export interface Transaction {
   bank_id: string;
   bank_name?: string;
   created_loan_id: string | null;
+  bill_image_url: string | null;
   created_at: string;
 }
 
@@ -489,6 +490,47 @@ export const transactionsApi = {
     // Delete the transaction
     const { error } = await supabase.from('transactions').delete().eq('id', id);
     if (error) throw error;
+  },
+
+  uploadBillImage: async (transactionId: string, file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${transactionId}-${Date.now()}.${fileExt}`;
+    const filePath = `bills/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('transaction-bills')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('transaction-bills')
+      .getPublicUrl(filePath);
+
+    const billUrl = urlData.publicUrl;
+
+    // Update the transaction with the bill URL
+    await supabase
+      .from('transactions')
+      .update({ bill_image_url: billUrl })
+      .eq('id', transactionId);
+
+    return billUrl;
+  },
+
+  removeBillImage: async (transactionId: string, billUrl: string): Promise<void> => {
+    // Extract file path from URL
+    const urlParts = billUrl.split('/transaction-bills/');
+    if (urlParts.length > 1) {
+      const filePath = urlParts[1];
+      await supabase.storage.from('transaction-bills').remove([filePath]);
+    }
+
+    // Update the transaction to remove bill URL
+    await supabase
+      .from('transactions')
+      .update({ bill_image_url: null })
+      .eq('id', transactionId);
   },
 };
 

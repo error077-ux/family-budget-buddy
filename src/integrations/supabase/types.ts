@@ -298,6 +298,7 @@ export type Database = {
         Row: {
           amount: number
           bank_id: string
+          bill_image_url: string | null
           created_at: string
           created_loan_id: string | null
           date: string
@@ -308,6 +309,7 @@ export type Database = {
         Insert: {
           amount: number
           bank_id: string
+          bill_image_url?: string | null
           created_at?: string
           created_loan_id?: string | null
           date?: string
@@ -318,6 +320,7 @@ export type Database = {
         Update: {
           amount?: number
           bank_id?: string
+          bill_image_url?: string | null
           created_at?: string
           created_loan_id?: string | null
           date?: string
