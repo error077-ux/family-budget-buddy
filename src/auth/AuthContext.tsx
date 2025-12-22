@@ -1,33 +1,42 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi } from '@/api/endpoints';
+import { settingsApi, hashPin } from '@/api/supabase-api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isPinSet: boolean;
   login: (pin: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  setNewPin: (pin: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const SESSION_KEY = 'budget_planner_session';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPinSet, setIsPinSet] = useState(false);
 
   const checkAuth = useCallback(async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setIsAuthenticated(false);
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      await authApi.verifyToken();
-      setIsAuthenticated(true);
-    } catch {
-      localStorage.removeItem('token');
-      setIsAuthenticated(false);
+      // Check if PIN is configured
+      const settings = await settingsApi.getSettings();
+      setIsPinSet(!!settings?.pin_hash);
+      
+      // Check session
+      const session = localStorage.getItem(SESSION_KEY);
+      if (session) {
+        const { expiry } = JSON.parse(session);
+        if (new Date().getTime() < expiry) {
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+        }
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
     } finally {
       setIsLoading(false);
     }
@@ -39,24 +48,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await authApi.login(pin);
-      const { access_token } = response.data;
-      localStorage.setItem('token', access_token);
+      const settings = await settingsApi.getSettings();
+      
+      if (!settings?.pin_hash) {
+        return { success: false, error: 'PIN not configured. Please set up your PIN first.' };
+      }
+      
+      const inputHash = hashPin(pin);
+      
+      if (inputHash !== settings.pin_hash) {
+        return { success: false, error: 'Invalid PIN' };
+      }
+      
+      // Create session (24 hours)
+      const expiry = new Date().getTime() + 24 * 60 * 60 * 1000;
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ expiry }));
       setIsAuthenticated(true);
+      
       return { success: true };
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Login failed. Please try again.';
-      return { success: false, error: message };
+      return { success: false, error: error.message || 'Login failed' };
+    }
+  };
+
+  const setNewPin = async (pin: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const pinHash = hashPin(pin);
+      await settingsApi.setPin(pinHash);
+      setIsPinSet(true);
+      
+      // Auto-login after setting PIN
+      const expiry = new Date().getTime() + 24 * 60 * 60 * 1000;
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ expiry }));
+      setIsAuthenticated(true);
+      
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Failed to set PIN' };
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(SESSION_KEY);
     setIsAuthenticated(false);
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, isPinSet, login, logout, setNewPin }}>
       {children}
     </AuthContext.Provider>
   );
