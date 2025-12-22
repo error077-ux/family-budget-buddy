@@ -139,6 +139,8 @@ export type Database = {
           company_name: string
           created_at: string
           id: string
+          issue_price: number | null
+          listing_price: number | null
           shares_allotted: number | null
           shares_applied: number
           status: Database["public"]["Enums"]["ipo_status"]
@@ -151,6 +153,8 @@ export type Database = {
           company_name: string
           created_at?: string
           id?: string
+          issue_price?: number | null
+          listing_price?: number | null
           shares_allotted?: number | null
           shares_applied: number
           status?: Database["public"]["Enums"]["ipo_status"]
@@ -163,6 +167,8 @@ export type Database = {
           company_name?: string
           created_at?: string
           id?: string
+          issue_price?: number | null
+          listing_price?: number | null
           shares_allotted?: number | null
           shares_applied?: number
           status?: Database["public"]["Enums"]["ipo_status"]
