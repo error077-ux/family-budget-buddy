@@ -12,6 +12,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
+// In-memory state for user sessions (for demo; in production use database)
+const userSessions: Record<number, { step: string; amount?: number; description?: string; bankId?: string }> = {};
+
 async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
   const body: any = {
     chat_id: chatId,
@@ -20,11 +23,12 @@ async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: a
   };
   if (replyMarkup) body.reply_markup = replyMarkup;
 
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  console.log("Telegram response:", await res.text());
 }
 
 async function getDashboardStats() {
@@ -52,19 +56,25 @@ async function getDashboardStats() {
   };
 }
 
-async function parseTransactionMessage(text: string) {
-  // Format: /add <amount> <description> [bank_name]
-  // Example: /add 500 Groceries kvb
-  const parts = text.split(" ");
-  if (parts.length < 3) return null;
+async function getBanksKeyboard() {
+  const { data: banks } = await supabase.from("banks").select("id, name");
+  if (!banks || banks.length === 0) return null;
 
-  const amount = parseFloat(parts[1]);
-  if (isNaN(amount)) return null;
+  const buttons = banks.map((bank) => [{ text: bank.name, callback_data: `bank_${bank.id}` }]);
+  buttons.push([{ text: "❌ Cancel", callback_data: "cancel" }]);
+  return { inline_keyboard: buttons };
+}
 
-  const description = parts.slice(2, -1).join(" ") || parts[2];
-  const bankName = parts.length > 3 ? parts[parts.length - 1] : null;
+async function getPersonsKeyboard() {
+  const { data: persons } = await supabase.from("persons").select("id, name, is_self");
+  if (!persons || persons.length === 0) return null;
 
-  return { amount, description, bankName };
+  const buttons = persons.map((person) => [{ 
+    text: person.is_self ? `${person.name} (Me)` : person.name, 
+    callback_data: `person_${person.name}` 
+  }]);
+  buttons.push([{ text: "❌ Cancel", callback_data: "cancel" }]);
+  return { inline_keyboard: buttons };
 }
 
 serve(async (req) => {
@@ -76,6 +86,95 @@ serve(async (req) => {
     const update = await req.json();
     console.log("Telegram update:", JSON.stringify(update));
 
+    // Handle callback queries (button clicks)
+    if (update.callback_query) {
+      const callback = update.callback_query;
+      const chatId = callback.message.chat.id;
+      const data = callback.data;
+
+      // Answer callback to remove loading state
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callback_query_id: callback.id }),
+      });
+
+      if (data === "cancel") {
+        delete userSessions[chatId];
+        await sendTelegramMessage(chatId, "❌ Transaction cancelled.");
+        return new Response("OK", { status: 200 });
+      }
+
+      if (data === "add_transaction") {
+        userSessions[chatId] = { step: "amount" };
+        await sendTelegramMessage(chatId, "💰 <b>Enter the amount:</b>\n\nType the transaction amount (e.g., 500)");
+        return new Response("OK", { status: 200 });
+      }
+
+      if (data.startsWith("bank_")) {
+        const bankId = data.replace("bank_", "");
+        const session = userSessions[chatId];
+        if (session && session.step === "bank") {
+          session.bankId = bankId;
+          session.step = "person";
+          const personsKeyboard = await getPersonsKeyboard();
+          await sendTelegramMessage(chatId, "👤 <b>Select expense owner:</b>", personsKeyboard);
+        }
+        return new Response("OK", { status: 200 });
+      }
+
+      if (data.startsWith("person_")) {
+        const personName = data.replace("person_", "");
+        const session = userSessions[chatId];
+        if (session && session.step === "person" && session.amount && session.description && session.bankId) {
+          // Create transaction
+          const { data: bank } = await supabase.from("banks").select("name").eq("id", session.bankId).single();
+          
+          const { data: tx, error: txError } = await supabase
+            .from("transactions")
+            .insert({
+              amount: session.amount,
+              description: session.description,
+              bank_id: session.bankId,
+              expense_owner: personName,
+              date: new Date().toISOString().split("T")[0],
+            })
+            .select()
+            .single();
+
+          if (txError) {
+            await sendTelegramMessage(chatId, `❌ Failed: ${txError.message}`);
+            delete userSessions[chatId];
+            return new Response("OK", { status: 200 });
+          }
+
+          // Add ledger entry
+          const { data: ledger } = await supabase.from("bank_ledger").select("credit, debit").eq("bank_id", session.bankId);
+          const currentBalance = (ledger || []).reduce((acc, e) => acc + Number(e.credit) - Number(e.debit), 0);
+
+          await supabase.from("bank_ledger").insert({
+            bank_id: session.bankId,
+            date: new Date().toISOString().split("T")[0],
+            description: session.description,
+            debit: session.amount,
+            credit: 0,
+            balance_after: currentBalance - session.amount,
+            reference_type: "transaction",
+            reference_id: tx.id,
+          });
+
+          await sendTelegramMessage(
+            chatId,
+            `✅ <b>Transaction Added!</b>\n\n💰 Amount: ₹${session.amount}\n📝 Description: ${session.description}\n🏦 Bank: ${bank?.name}\n👤 Owner: ${personName}\n💵 New Balance: ₹${(currentBalance - session.amount).toFixed(2)}`
+          );
+          delete userSessions[chatId];
+        }
+        return new Response("OK", { status: 200 });
+      }
+
+      return new Response("OK", { status: 200 });
+    }
+
     const message = update.message;
     if (!message) {
       return new Response("OK", { status: 200 });
@@ -84,15 +183,57 @@ serve(async (req) => {
     const chatId = message.chat.id;
     const text = message.text || "";
 
+    // Check if user is in a session flow
+    const session = userSessions[chatId];
+    if (session) {
+      if (session.step === "amount") {
+        const amount = parseFloat(text);
+        if (isNaN(amount) || amount <= 0) {
+          await sendTelegramMessage(chatId, "❌ Invalid amount. Please enter a valid number:");
+          return new Response("OK", { status: 200 });
+        }
+        session.amount = amount;
+        session.step = "description";
+        await sendTelegramMessage(chatId, "📝 <b>Enter description:</b>\n\nWhat is this transaction for?");
+        return new Response("OK", { status: 200 });
+      }
+
+      if (session.step === "description") {
+        session.description = text;
+        session.step = "bank";
+        const banksKeyboard = await getBanksKeyboard();
+        if (!banksKeyboard) {
+          await sendTelegramMessage(chatId, "❌ No banks found. Please add a bank first.");
+          delete userSessions[chatId];
+          return new Response("OK", { status: 200 });
+        }
+        await sendTelegramMessage(chatId, "🏦 <b>Select bank:</b>", banksKeyboard);
+        return new Response("OK", { status: 200 });
+      }
+    }
+
     // /start command
     if (text === "/start") {
       await sendTelegramMessage(
         chatId,
-        `🏦 <b>Budget Planner Bot</b>\n\nWelcome! Here are the available commands:\n\n/dashboard - View financial summary\n/banks - List all banks\n/loans - View pending loans\n/add &lt;amount&gt; &lt;description&gt; [bank] - Add transaction\n/help - Show this help message`,
+        `🏦 <b>Budget Planner Bot</b>\n\nWelcome! Manage your finances easily.\n\nTap a button below or use commands:`,
         {
-          keyboard: [["/dashboard", "/banks"], ["/loans", "/help"]],
-          resize_keyboard: true,
+          inline_keyboard: [
+            [{ text: "📊 Dashboard", callback_data: "cmd_dashboard" }, { text: "➕ Add Transaction", callback_data: "add_transaction" }],
+            [{ text: "🏦 Banks", callback_data: "cmd_banks" }, { text: "💳 Cards", callback_data: "cmd_cards" }],
+            [{ text: "📋 Loans", callback_data: "cmd_loans" }, { text: "❓ Help", callback_data: "cmd_help" }],
+          ],
         }
+      );
+    }
+
+    // /transaction or /add command - Start interactive flow
+    else if (text === "/transaction" || text === "/add") {
+      userSessions[chatId] = { step: "amount" };
+      await sendTelegramMessage(
+        chatId,
+        "➕ <b>Add New Transaction</b>\n\n💰 <b>Step 1:</b> Enter the amount:\n\n<i>Type the transaction amount (e.g., 500)</i>",
+        { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "cancel" }]] }
       );
     }
 
@@ -100,7 +241,7 @@ serve(async (req) => {
     else if (text === "/help") {
       await sendTelegramMessage(
         chatId,
-        `📋 <b>Available Commands</b>\n\n/dashboard - View financial summary\n/banks - List all banks with balances\n/loans - View pending loans\n/cards - View credit cards\n/add &lt;amount&gt; &lt;description&gt; [bank] - Add expense\n\n<b>Example:</b>\n/add 500 Groceries kvb`
+        `📋 <b>Available Commands</b>\n\n/dashboard - View financial summary\n/banks - List all banks with balances\n/loans - View pending loans\n/cards - View credit cards\n/transaction - Add new expense (interactive)\n/add - Same as /transaction`
       );
     }
 
@@ -167,75 +308,7 @@ serve(async (req) => {
       await sendTelegramMessage(chatId, msg);
     }
 
-    // /add command - Add transaction
-    else if (text.startsWith("/add ")) {
-      const parsed = await parseTransactionMessage(text);
-      if (!parsed) {
-        await sendTelegramMessage(chatId, "❌ Invalid format.\n\nUse: /add <amount> <description> [bank_name]\nExample: /add 500 Groceries kvb");
-        return new Response("OK", { status: 200 });
-      }
-
-      // Get bank
-      let bank;
-      if (parsed.bankName) {
-        const { data } = await supabase.from("banks").select("*").ilike("name", `%${parsed.bankName}%`).limit(1).single();
-        bank = data;
-      }
-      if (!bank) {
-        const { data } = await supabase.from("banks").select("*").order("name").limit(1).single();
-        bank = data;
-      }
-
-      if (!bank) {
-        await sendTelegramMessage(chatId, "❌ No banks found. Please add a bank first.");
-        return new Response("OK", { status: 200 });
-      }
-
-      // Get self person
-      const { data: selfPerson } = await supabase.from("persons").select("name").eq("is_self", true).single();
-      const expenseOwner = selfPerson?.name || "Me";
-
-      // Create transaction
-      const { data: tx, error: txError } = await supabase
-        .from("transactions")
-        .insert({
-          amount: parsed.amount,
-          description: parsed.description,
-          bank_id: bank.id,
-          expense_owner: expenseOwner,
-          date: new Date().toISOString().split("T")[0],
-        })
-        .select()
-        .single();
-
-      if (txError) {
-        console.error("Transaction error:", txError);
-        await sendTelegramMessage(chatId, `❌ Failed to add transaction: ${txError.message}`);
-        return new Response("OK", { status: 200 });
-      }
-
-      // Add ledger entry
-      const { data: ledger } = await supabase.from("bank_ledger").select("credit, debit").eq("bank_id", bank.id);
-      const currentBalance = (ledger || []).reduce((acc, e) => acc + Number(e.credit) - Number(e.debit), 0);
-
-      await supabase.from("bank_ledger").insert({
-        bank_id: bank.id,
-        date: new Date().toISOString().split("T")[0],
-        description: parsed.description,
-        debit: parsed.amount,
-        credit: 0,
-        balance_after: currentBalance - parsed.amount,
-        reference_type: "transaction",
-        reference_id: tx.id,
-      });
-
-      await sendTelegramMessage(
-        chatId,
-        `✅ <b>Transaction Added</b>\n\nAmount: ₹${parsed.amount}\nDescription: ${parsed.description}\nBank: ${bank.name}\nNew Balance: ₹${(currentBalance - parsed.amount).toFixed(2)}`
-      );
-    }
-
-    // Unknown command
+    // Handle inline button commands
     else if (text.startsWith("/")) {
       await sendTelegramMessage(chatId, "Unknown command. Use /help to see available commands.");
     }
