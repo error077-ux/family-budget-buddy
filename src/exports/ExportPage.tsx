@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import QRCode from 'qrcode';
 
 const ExportPage: React.FC = () => {
   const [exporting, setExporting] = useState(false);
@@ -102,8 +103,9 @@ const ExportPage: React.FC = () => {
           expense_owner: t.expense_owner,
           bank: t.bank_name || '-',
           has_loan: t.created_loan_id ? 'Yes' : 'No',
+          bill_url: t.bill_image_url || '-',
         }));
-        exportToCSV(data, `transactions_${date}.csv`, ['Date', 'Description', 'Amount', 'Expense_Owner', 'Bank', 'Has_Loan']);
+        exportToCSV(data, `transactions_${date}.csv`, ['Date', 'Description', 'Amount', 'Expense_Owner', 'Bank', 'Has_Loan', 'Bill_URL']);
       }
 
       if (selected.loans) {
@@ -304,11 +306,12 @@ const ExportPage: React.FC = () => {
         yPos = drawTable(doc, yPos, ['Borrower', 'Principal', 'Outstanding', 'Status'], loanData, { headerColor: [245, 158, 11] });
       }
 
-      // Transactions
+      // Transactions with QR codes for bills
       if (selected.transactions) {
         const transactions = await transactionsApi.getAll();
         const filtered = filterByDateRange(transactions, 'date');
         const totalExpenses = filtered.reduce((sum, t) => sum + Number(t.amount), 0);
+        const transactionsWithBills = filtered.filter(t => t.bill_image_url);
 
         if (yPos > 200) { doc.addPage(); yPos = 20; }
         
@@ -321,10 +324,56 @@ const ExportPage: React.FC = () => {
           new Date(t.date).toLocaleDateString('en-IN'),
           t.description.substring(0, 15),
           t.expense_owner,
-          `Rs. ${Number(t.amount).toLocaleString('en-IN')}`
+          `Rs. ${Number(t.amount).toLocaleString('en-IN')}`,
+          t.bill_image_url ? 'Yes' : 'No'
         ]);
-        txData.push(['Total', '', '', `Rs. ${totalExpenses.toLocaleString('en-IN')}`]);
-        yPos = drawTable(doc, yPos, ['Date', 'Description', 'Owner', 'Amount'], txData, { headerColor: [34, 197, 94] });
+        txData.push(['Total', '', '', `Rs. ${totalExpenses.toLocaleString('en-IN')}`, '']);
+        yPos = drawTable(doc, yPos, ['Date', 'Description', 'Owner', 'Amount', 'Bill'], txData, { headerColor: [34, 197, 94] });
+
+        // Add QR codes for bills
+        if (transactionsWithBills.length > 0) {
+          if (yPos > 200) { doc.addPage(); yPos = 20; }
+          
+          doc.setFontSize(14);
+          doc.setTextColor(40, 40, 40);
+          doc.text('Bill QR Codes (Scan to view)', 14, yPos);
+          yPos += 10;
+
+          const qrSize = 40;
+          const qrPerRow = 4;
+          let qrX = 14;
+          let qrCount = 0;
+
+          for (const tx of transactionsWithBills.slice(0, 12)) {
+            if (yPos > 240) { doc.addPage(); yPos = 20; qrX = 14; qrCount = 0; }
+
+            try {
+              const qrDataUrl = await QRCode.toDataURL(tx.bill_image_url!, { width: 200, margin: 1 });
+              doc.addImage(qrDataUrl, 'PNG', qrX, yPos, qrSize, qrSize);
+              
+              // Add label below QR
+              doc.setFontSize(6);
+              doc.setTextColor(100, 100, 100);
+              const label = tx.description.substring(0, 12);
+              doc.text(label, qrX + qrSize / 2, yPos + qrSize + 4, { align: 'center' });
+              
+              qrX += qrSize + 10;
+              qrCount++;
+              
+              if (qrCount >= qrPerRow) {
+                qrX = 14;
+                qrCount = 0;
+                yPos += qrSize + 15;
+              }
+            } catch (e) {
+              console.error('Failed to generate QR for', tx.description);
+            }
+          }
+          
+          if (qrCount > 0) {
+            yPos += qrSize + 15;
+          }
+        }
       }
 
       // IPOs
