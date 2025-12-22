@@ -19,6 +19,9 @@ const LoanList: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [saving, setSaving] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [selectedBorrower, setSelectedBorrower] = useState<string>('all');
   const { toast } = useToast();
   const [form, setForm] = useState({ amount: '', bank_id: '', date: getTodayIST() });
 
@@ -56,7 +59,7 @@ const LoanList: React.FC = () => {
 
   const handleExport = () => {
     const headers = ['Borrower', 'Principal', 'Outstanding', 'Status', 'Paid From', 'Created Date'];
-    const rows = loans.map(loan => [
+    const rows = filteredLoans.map(loan => [
       loan.borrower_name,
       loan.principal_amount,
       loan.outstanding_amount,
@@ -79,13 +82,41 @@ const LoanList: React.FC = () => {
     toast({ title: 'Exported', description: 'Loans exported to CSV' });
   };
 
+  const clearFilters = () => {
+    setSearch('');
+    setFilter('all');
+    setFromDate('');
+    setToDate('');
+    setSelectedBorrower('all');
+  };
+
+  // Get unique borrower names
+  const uniqueBorrowers = [...new Set(loans.map(l => l.borrower_name))].sort();
+
   const filteredLoans = loans.filter((loan) => {
     const matchesSearch = loan.borrower_name.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === 'all' || (filter === 'pending' && !loan.is_paid) || (filter === 'paid' && loan.is_paid);
-    return matchesSearch && matchesFilter;
+    const matchesBorrower = selectedBorrower === 'all' || loan.borrower_name === selectedBorrower;
+    
+    // Date filtering based on created_at
+    const loanDate = new Date(loan.created_at).toISOString().split('T')[0];
+    const matchesFromDate = !fromDate || loanDate >= fromDate;
+    const matchesToDate = !toDate || loanDate <= toDate;
+    
+    return matchesSearch && matchesFilter && matchesBorrower && matchesFromDate && matchesToDate;
   });
 
+  // Calculate filtered stats
+  const filteredStats = {
+    count: filteredLoans.length,
+    totalPrincipal: filteredLoans.reduce((sum, l) => sum + Number(l.principal_amount), 0),
+    totalOutstanding: filteredLoans.reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
+    pending: filteredLoans.filter(l => !l.is_paid).length,
+  };
+
   const stats = { total: loans.length, pending: loans.filter((l) => !l.is_paid).length, totalOutstanding: loans.reduce((sum, l) => sum + Number(l.outstanding_amount), 0) };
+
+  const hasActiveFilters = search || filter !== 'all' || fromDate || toDate || selectedBorrower !== 'all';
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -95,15 +126,105 @@ const LoanList: React.FC = () => {
         <div><h1 className="text-3xl font-bold text-foreground">Loans</h1><p className="text-muted-foreground">Track loans (auto-created when owner ≠ "Me")</p></div>
         <Button onClick={handleExport} variant="outline" className="gap-2"><Download className="w-4 h-4" />Export CSV</Button>
       </div>
+      
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card-finance p-5"><p className="text-sm text-muted-foreground">Total Loans</p><p className="text-2xl font-bold">{stats.total}</p></div>
         <div className="card-finance p-5"><p className="text-sm text-muted-foreground">Pending</p><p className="text-2xl font-bold text-warning">{stats.pending}</p></div>
         <div className="card-finance p-5"><p className="text-sm text-muted-foreground">Outstanding</p><p className="text-2xl font-bold text-destructive mono">{formatMoney(stats.totalOutstanding)}</p></div>
       </div>
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" /></div>
-        <Select value={filter} onValueChange={(v: any) => setFilter(v)}><SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select>
+
+      {/* Filters */}
+      <div className="card-finance p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-foreground">Filters</h3>
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+              Clear All
+            </Button>
+          )}
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+          </div>
+          
+          {/* Borrower Name */}
+          <Select value={selectedBorrower} onValueChange={setSelectedBorrower}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select borrower" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Borrowers</SelectItem>
+              {uniqueBorrowers.map((name) => (
+                <SelectItem key={name} value={name}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          {/* Status Filter */}
+          <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {/* From Date */}
+          <div>
+            <Input 
+              type="date" 
+              value={fromDate} 
+              onChange={(e) => setFromDate(e.target.value)} 
+              placeholder="From Date"
+              className="w-full"
+            />
+          </div>
+          
+          {/* To Date */}
+          <div>
+            <Input 
+              type="date" 
+              value={toDate} 
+              onChange={(e) => setToDate(e.target.value)} 
+              placeholder="To Date"
+              className="w-full"
+            />
+          </div>
+        </div>
       </div>
+
+      {/* Filtered Results Summary */}
+      {hasActiveFilters && (
+        <div className="card-finance p-4 bg-primary/5 border-primary/20">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Showing:</span>
+              <span className="font-semibold">{filteredStats.count} loan{filteredStats.count !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="h-4 w-px bg-border hidden sm:block" />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Pending:</span>
+              <span className="font-semibold text-warning">{filteredStats.pending}</span>
+            </div>
+            <div className="h-4 w-px bg-border hidden sm:block" />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Total Principal:</span>
+              <span className="font-semibold mono">{formatMoney(filteredStats.totalPrincipal)}</span>
+            </div>
+            <div className="h-4 w-px bg-border hidden sm:block" />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Total Outstanding:</span>
+              <span className="font-bold text-destructive mono">{formatMoney(filteredStats.totalOutstanding)}</span>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="space-y-4">
         {filteredLoans.length === 0 ? <div className="card-finance p-12 text-center"><HandCoins className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" /><p className="text-muted-foreground">No loans</p></div> : filteredLoans.map((loan) => (
           <div key={loan.id} className="card-finance p-5">
