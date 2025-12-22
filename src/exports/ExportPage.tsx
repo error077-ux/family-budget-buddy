@@ -1,16 +1,25 @@
 import React, { useState } from 'react';
-import { Download, FileSpreadsheet, FileText, Loader2, CheckCircle } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Loader2, CheckCircle, CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { transactionsApi, loansApi, banksApi, creditCardsApi, ipoApi, notificationsApi } from '@/api/supabase-api';
 import { jsPDF } from 'jspdf';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const ExportPage: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const { toast } = useToast();
+  
+  // Date range state
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  
   const [selected, setSelected] = useState({
     transactions: true,
     loans: true,
@@ -22,6 +31,44 @@ const ExportPage: React.FC = () => {
 
   const toggleSelection = (key: keyof typeof selected) => {
     setSelected(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const clearDateFilter = () => {
+    setStartDate(undefined);
+    setEndDate(undefined);
+  };
+
+  // Filter data by date range
+  const filterByDateRange = <T extends { date?: string; created_at?: string; application_date?: string; scheduled_date?: string }>(
+    data: T[],
+    dateField: keyof T
+  ): T[] => {
+    if (!startDate && !endDate) return data;
+    
+    return data.filter(item => {
+      const itemDateStr = item[dateField] as string;
+      if (!itemDateStr) return true;
+      
+      const itemDate = new Date(itemDateStr);
+      itemDate.setHours(0, 0, 0, 0);
+      
+      if (startDate && endDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        return itemDate >= start && itemDate <= end;
+      } else if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        return itemDate >= start;
+      } else if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        return itemDate <= end;
+      }
+      return true;
+    });
   };
 
   const exportToCSV = (data: any[], filename: string, headers: string[]) => {
@@ -47,7 +94,8 @@ const ExportPage: React.FC = () => {
 
       if (selected.transactions) {
         const transactions = await transactionsApi.getAll();
-        const data = transactions.map(t => ({
+        const filtered = filterByDateRange(transactions, 'date');
+        const data = filtered.map(t => ({
           date: t.date,
           description: t.description,
           amount: t.amount,
@@ -60,7 +108,8 @@ const ExportPage: React.FC = () => {
 
       if (selected.loans) {
         const loans = await loansApi.getAll();
-        const data = loans.map(l => ({
+        const filtered = filterByDateRange(loans, 'created_at');
+        const data = filtered.map(l => ({
           borrower_name: l.borrower_name,
           principal_amount: l.principal_amount,
           outstanding_amount: l.outstanding_amount,
@@ -95,7 +144,8 @@ const ExportPage: React.FC = () => {
 
       if (selected.ipos) {
         const ipos = await ipoApi.getAll();
-        const data = ipos.map(i => ({
+        const filtered = filterByDateRange(ipos, 'application_date');
+        const data = filtered.map(i => ({
           company_name: i.company_name,
           application_date: i.application_date,
           amount: i.amount,
@@ -109,7 +159,8 @@ const ExportPage: React.FC = () => {
 
       if (selected.notifications) {
         const notifications = await notificationsApi.getAll();
-        const data = notifications.map(n => ({
+        const filtered = filterByDateRange(notifications, 'scheduled_date');
+        const data = filtered.map(n => ({
           title: n.title,
           message: n.message,
           email: n.email,
@@ -185,6 +236,13 @@ const ExportPage: React.FC = () => {
       doc.setFontSize(10);
       doc.setTextColor(100, 100, 100);
       doc.text(`Generated on: ${date}`, 14, yPos);
+      
+      // Show date range if selected
+      if (startDate || endDate) {
+        yPos += 6;
+        const rangeText = `Date Range: ${startDate ? format(startDate, 'dd/MM/yyyy') : 'Start'} - ${endDate ? format(endDate, 'dd/MM/yyyy') : 'End'}`;
+        doc.text(rangeText, 14, yPos);
+      }
       yPos += 15;
 
       // Banks Summary
@@ -226,7 +284,8 @@ const ExportPage: React.FC = () => {
       // Loans Summary
       if (selected.loans) {
         const loans = await loansApi.getAll();
-        const totalOutstanding = loans.filter(l => !l.is_paid).reduce((sum, l) => sum + Number(l.outstanding_amount), 0);
+        const filtered = filterByDateRange(loans, 'created_at');
+        const totalOutstanding = filtered.filter(l => !l.is_paid).reduce((sum, l) => sum + Number(l.outstanding_amount), 0);
 
         if (yPos > 240) { doc.addPage(); yPos = 20; }
         
@@ -235,7 +294,7 @@ const ExportPage: React.FC = () => {
         doc.text('Loans', 14, yPos);
         yPos += 8;
 
-        const loanData = loans.map(l => [
+        const loanData = filtered.map(l => [
           l.borrower_name,
           `Rs. ${Number(l.principal_amount).toLocaleString('en-IN')}`,
           `Rs. ${Number(l.outstanding_amount).toLocaleString('en-IN')}`,
@@ -248,16 +307,17 @@ const ExportPage: React.FC = () => {
       // Transactions
       if (selected.transactions) {
         const transactions = await transactionsApi.getAll();
-        const totalExpenses = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+        const filtered = filterByDateRange(transactions, 'date');
+        const totalExpenses = filtered.reduce((sum, t) => sum + Number(t.amount), 0);
 
         if (yPos > 200) { doc.addPage(); yPos = 20; }
         
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
-        doc.text('Recent Transactions', 14, yPos);
+        doc.text('Transactions', 14, yPos);
         yPos += 8;
 
-        const txData = transactions.slice(0, 15).map(t => [
+        const txData = filtered.slice(0, 15).map(t => [
           new Date(t.date).toLocaleDateString('en-IN'),
           t.description.substring(0, 15),
           t.expense_owner,
@@ -270,8 +330,9 @@ const ExportPage: React.FC = () => {
       // IPOs
       if (selected.ipos) {
         const ipos = await ipoApi.getAll();
+        const filtered = filterByDateRange(ipos, 'application_date');
         
-        if (ipos.length > 0) {
+        if (filtered.length > 0) {
           if (yPos > 200) { doc.addPage(); yPos = 20; }
           
           doc.setFontSize(14);
@@ -279,7 +340,7 @@ const ExportPage: React.FC = () => {
           doc.text('IPO Applications', 14, yPos);
           yPos += 8;
 
-          const ipoData = ipos.map(i => [
+          const ipoData = filtered.map(i => [
             i.company_name,
             new Date(i.application_date).toLocaleDateString('en-IN'),
             `Rs. ${Number(i.amount).toLocaleString('en-IN')}`,
@@ -308,6 +369,82 @@ const ExportPage: React.FC = () => {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Export Data</h1>
         <p className="text-muted-foreground">Download your financial data</p>
+      </div>
+
+      {/* Date Range Filter */}
+      <div className="card-finance p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h3 className="text-lg font-semibold">Date Range Filter</h3>
+          {(startDate || endDate) && (
+            <Button variant="ghost" size="sm" onClick={clearDateFilter} className="text-muted-foreground">
+              Clear Filter
+            </Button>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Filter transactions, loans, IPOs, and notifications by date range. Banks and credit cards show current balances.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <Label className="mb-2 block">Start Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !startDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {startDate ? format(startDate, "dd MMM yyyy") : "Select start date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={startDate}
+                  onSelect={setStartDate}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="flex-1">
+            <Label className="mb-2 block">End Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !endDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {endDate ? format(endDate, "dd MMM yyyy") : "Select end date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={endDate}
+                  onSelect={setEndDate}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+        {(startDate || endDate) && (
+          <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <p className="text-sm text-primary">
+              Filtering: {startDate ? format(startDate, "dd MMM yyyy") : "Beginning"} → {endDate ? format(endDate, "dd MMM yyyy") : "Now"}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Selection */}
@@ -387,7 +524,7 @@ const ExportPage: React.FC = () => {
           <CheckCircle className="w-5 h-5 text-success mt-0.5" />
           <div>
             <h4 className="font-medium mb-1">Export Information</h4>
-            <p className="text-sm text-muted-foreground">PDF exports include summaries and formatted tables. CSV exports create separate files for each category, ideal for spreadsheet analysis.</p>
+            <p className="text-sm text-muted-foreground">PDF exports include summaries and formatted tables. CSV exports create separate files for each category, ideal for spreadsheet analysis. Date filter applies to transactions, loans, IPOs, and notifications.</p>
           </div>
         </div>
       </div>
