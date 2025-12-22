@@ -66,6 +66,7 @@ export interface IPO {
   id: string;
   company_name: string;
   application_date: string;
+  allotment_date: string | null;
   amount: number;
   shares_applied: number;
   shares_allotted: number | null;
@@ -694,6 +695,7 @@ export const ipoApi = {
   apply: async (ipo: {
     company_name: string;
     application_date: string;
+    allotment_date: string;
     amount: number;
     shares_applied: number;
     bank_id: string;
@@ -704,6 +706,7 @@ export const ipoApi = {
       .insert({
         company_name: ipo.company_name,
         application_date: ipo.application_date,
+        allotment_date: ipo.allotment_date,
         amount: ipo.amount,
         shares_applied: ipo.shares_applied,
         bank_id: ipo.bank_id,

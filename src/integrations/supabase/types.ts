@@ -132,6 +132,7 @@ export type Database = {
       }
       ipo_applications: {
         Row: {
+          allotment_date: string | null
           amount: number
           application_date: string
           bank_id: string
@@ -143,6 +144,7 @@ export type Database = {
           status: Database["public"]["Enums"]["ipo_status"]
         }
         Insert: {
+          allotment_date?: string | null
           amount: number
           application_date?: string
           bank_id: string
@@ -154,6 +156,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["ipo_status"]
         }
         Update: {
+          allotment_date?: string | null
           amount?: number
           application_date?: string
           bank_id?: string
