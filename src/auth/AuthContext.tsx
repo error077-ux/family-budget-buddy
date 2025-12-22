@@ -10,7 +10,7 @@ interface AuthContextType {
   setNewPin: (pin: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 const SESSION_KEY = 'budget_planner_session';
 
