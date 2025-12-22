@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { transactionsApi, loansApi, banksApi, creditCardsApi, ipoApi, notificationsApi } from '@/api/supabase-api';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const ExportPage: React.FC = () => {
   const [exporting, setExporting] = useState(false);
@@ -129,6 +128,47 @@ const ExportPage: React.FC = () => {
     }
   };
 
+  // Helper function to draw a simple table
+  const drawTable = (doc: jsPDF, startY: number, headers: string[], data: string[][], options?: { headerColor?: number[] }) => {
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const cellPadding = 4;
+    const colWidth = (pageWidth - margin * 2) / headers.length;
+    const rowHeight = 10;
+    let y = startY;
+
+    // Draw header
+    doc.setFillColor(options?.headerColor?.[0] || 59, options?.headerColor?.[1] || 130, options?.headerColor?.[2] || 246);
+    doc.rect(margin, y, pageWidth - margin * 2, rowHeight, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    headers.forEach((header, i) => {
+      doc.text(header, margin + i * colWidth + cellPadding, y + 7);
+    });
+    y += rowHeight;
+
+    // Draw data rows
+    doc.setTextColor(40, 40, 40);
+    doc.setFontSize(8);
+    data.forEach((row, rowIndex) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+      if (rowIndex % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y, pageWidth - margin * 2, rowHeight, 'F');
+      }
+      row.forEach((cell, i) => {
+        const text = String(cell).substring(0, 20);
+        doc.text(text, margin + i * colWidth + cellPadding, y + 7);
+      });
+      y += rowHeight;
+    });
+
+    return y + 10;
+  };
+
   const handleExportPDF = async () => {
     setExportingPdf(true);
     try {
@@ -155,18 +195,11 @@ const ExportPage: React.FC = () => {
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
         doc.text('Bank Accounts', 14, yPos);
-        yPos += 2;
+        yPos += 8;
 
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Bank Name', 'Account Number', 'Balance']],
-          body: banks.map(b => [b.name, b.account_number, `Rs. ${b.balance.toLocaleString('en-IN')}`]),
-          foot: [['Total', '', `Rs. ${totalBalance.toLocaleString('en-IN')}`]],
-          theme: 'striped',
-          headStyles: { fillColor: [59, 130, 246] },
-          footStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: 'bold' },
-        });
-        yPos = (doc as any).lastAutoTable.finalY + 15;
+        const bankData = banks.map(b => [b.name, b.account_number, `Rs. ${b.balance.toLocaleString('en-IN')}`]);
+        bankData.push(['Total', '', `Rs. ${totalBalance.toLocaleString('en-IN')}`]);
+        yPos = drawTable(doc, yPos, ['Bank Name', 'Account No.', 'Balance'], bankData, { headerColor: [59, 130, 246] });
       }
 
       // Credit Cards Summary
@@ -174,59 +207,42 @@ const ExportPage: React.FC = () => {
         const cards = await creditCardsApi.getAll();
         const totalOutstanding = cards.reduce((sum, c) => sum + Number(c.outstanding), 0);
 
-        if (yPos > 250) { doc.addPage(); yPos = 20; }
+        if (yPos > 240) { doc.addPage(); yPos = 20; }
         
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
         doc.text('Credit Cards', 14, yPos);
-        yPos += 2;
+        yPos += 8;
 
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Card Name', 'Credit Limit', 'Outstanding', 'Available']],
-          body: cards.map(c => [
-            c.name, 
-            `Rs. ${Number(c.credit_limit).toLocaleString('en-IN')}`,
-            `Rs. ${Number(c.outstanding).toLocaleString('en-IN')}`,
-            `Rs. ${Number(c.available_credit).toLocaleString('en-IN')}`
-          ]),
-          foot: [['Total Outstanding', '', `Rs. ${totalOutstanding.toLocaleString('en-IN')}`, '']],
-          theme: 'striped',
-          headStyles: { fillColor: [239, 68, 68] },
-          footStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: 'bold' },
-        });
-        yPos = (doc as any).lastAutoTable.finalY + 15;
+        const cardData = cards.map(c => [
+          c.name, 
+          `Rs. ${Number(c.credit_limit).toLocaleString('en-IN')}`,
+          `Rs. ${Number(c.outstanding).toLocaleString('en-IN')}`
+        ]);
+        cardData.push(['Total Outstanding', '', `Rs. ${totalOutstanding.toLocaleString('en-IN')}`]);
+        yPos = drawTable(doc, yPos, ['Card Name', 'Limit', 'Outstanding'], cardData, { headerColor: [239, 68, 68] });
       }
 
       // Loans Summary
       if (selected.loans) {
         const loans = await loansApi.getAll();
-        const pendingLoans = loans.filter(l => !l.is_paid);
-        const totalOutstanding = pendingLoans.reduce((sum, l) => sum + Number(l.outstanding_amount), 0);
+        const totalOutstanding = loans.filter(l => !l.is_paid).reduce((sum, l) => sum + Number(l.outstanding_amount), 0);
 
-        if (yPos > 250) { doc.addPage(); yPos = 20; }
+        if (yPos > 240) { doc.addPage(); yPos = 20; }
         
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
         doc.text('Loans', 14, yPos);
-        yPos += 2;
+        yPos += 8;
 
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Borrower', 'Principal', 'Outstanding', 'Status', 'Source']],
-          body: loans.map(l => [
-            l.borrower_name,
-            `Rs. ${Number(l.principal_amount).toLocaleString('en-IN')}`,
-            `Rs. ${Number(l.outstanding_amount).toLocaleString('en-IN')}`,
-            l.is_paid ? 'Paid' : 'Pending',
-            l.source_bank_name || l.source_credit_card_name || '-'
-          ]),
-          foot: [['Total Pending', '', `Rs. ${totalOutstanding.toLocaleString('en-IN')}`, '', '']],
-          theme: 'striped',
-          headStyles: { fillColor: [245, 158, 11] },
-          footStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: 'bold' },
-        });
-        yPos = (doc as any).lastAutoTable.finalY + 15;
+        const loanData = loans.map(l => [
+          l.borrower_name,
+          `Rs. ${Number(l.principal_amount).toLocaleString('en-IN')}`,
+          `Rs. ${Number(l.outstanding_amount).toLocaleString('en-IN')}`,
+          l.is_paid ? 'Paid' : 'Pending'
+        ]);
+        loanData.push(['Total Pending', '', `Rs. ${totalOutstanding.toLocaleString('en-IN')}`, '']);
+        yPos = drawTable(doc, yPos, ['Borrower', 'Principal', 'Outstanding', 'Status'], loanData, { headerColor: [245, 158, 11] });
       }
 
       // Transactions
@@ -239,24 +255,16 @@ const ExportPage: React.FC = () => {
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
         doc.text('Recent Transactions', 14, yPos);
-        yPos += 2;
+        yPos += 8;
 
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Date', 'Description', 'Owner', 'Bank', 'Amount']],
-          body: transactions.slice(0, 20).map(t => [
-            new Date(t.date).toLocaleDateString('en-IN'),
-            t.description,
-            t.expense_owner,
-            t.bank_name || '-',
-            `Rs. ${Number(t.amount).toLocaleString('en-IN')}`
-          ]),
-          foot: [['Total Expenses', '', '', '', `Rs. ${totalExpenses.toLocaleString('en-IN')}`]],
-          theme: 'striped',
-          headStyles: { fillColor: [34, 197, 94] },
-          footStyles: { fillColor: [229, 231, 235], textColor: [40, 40, 40], fontStyle: 'bold' },
-        });
-        yPos = (doc as any).lastAutoTable.finalY + 15;
+        const txData = transactions.slice(0, 15).map(t => [
+          new Date(t.date).toLocaleDateString('en-IN'),
+          t.description.substring(0, 15),
+          t.expense_owner,
+          `Rs. ${Number(t.amount).toLocaleString('en-IN')}`
+        ]);
+        txData.push(['Total', '', '', `Rs. ${totalExpenses.toLocaleString('en-IN')}`]);
+        yPos = drawTable(doc, yPos, ['Date', 'Description', 'Owner', 'Amount'], txData, { headerColor: [34, 197, 94] });
       }
 
       // IPOs
@@ -269,21 +277,15 @@ const ExportPage: React.FC = () => {
           doc.setFontSize(14);
           doc.setTextColor(40, 40, 40);
           doc.text('IPO Applications', 14, yPos);
-          yPos += 2;
+          yPos += 8;
 
-          autoTable(doc, {
-            startY: yPos,
-            head: [['Company', 'Date', 'Amount', 'Shares', 'Status']],
-            body: ipos.map(i => [
-              i.company_name,
-              new Date(i.application_date).toLocaleDateString('en-IN'),
-              `Rs. ${Number(i.amount).toLocaleString('en-IN')}`,
-              i.shares_applied,
-              i.status
-            ]),
-            theme: 'striped',
-            headStyles: { fillColor: [139, 92, 246] },
-          });
+          const ipoData = ipos.map(i => [
+            i.company_name,
+            new Date(i.application_date).toLocaleDateString('en-IN'),
+            `Rs. ${Number(i.amount).toLocaleString('en-IN')}`,
+            i.status
+          ]);
+          drawTable(doc, yPos, ['Company', 'Date', 'Amount', 'Status'], ipoData, { headerColor: [139, 92, 246] });
         }
       }
 
