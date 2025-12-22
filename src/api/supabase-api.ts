@@ -391,21 +391,31 @@ export const transactionsApi = {
     
     if (fetchError) throw fetchError;
 
-    // Check if expense owner is changing from "Me" to someone else (need to create a loan)
-    const isChangingToNonSelf = tx.expense_owner !== undefined && 
-      tx.expense_owner !== 'Me' && 
-      originalTx.expense_owner === 'Me' &&
-      !originalTx.created_loan_id;
+    // Check if we need to create a loan:
+    // 1. Expense owner is changing from "Me" to someone else
+    // 2. OR expense owner is not "Me" and there's no loan yet (fix for existing transactions)
+    const needsLoanCreation = (
+      // Case 1: Changing from Me to non-Me
+      (tx.expense_owner !== undefined && 
+       tx.expense_owner !== 'Me' && 
+       originalTx.expense_owner === 'Me' &&
+       !originalTx.created_loan_id) ||
+      // Case 2: Already non-Me but no loan exists (fix existing data)
+      (originalTx.expense_owner !== 'Me' && 
+       !originalTx.created_loan_id &&
+       (tx.expense_owner === undefined || tx.expense_owner !== 'Me'))
+    );
 
     let createdLoanId: string | null = null;
+    const finalExpenseOwner = tx.expense_owner ?? originalTx.expense_owner;
 
-    if (isChangingToNonSelf) {
+    if (needsLoanCreation && finalExpenseOwner !== 'Me') {
       // Create a new loan for this transaction
       const loanAmount = tx.amount ?? originalTx.amount;
       const { data: loan, error: loanError } = await supabase
         .from('loans')
         .insert({
-          borrower_name: tx.expense_owner,
+          borrower_name: finalExpenseOwner,
           principal_amount: loanAmount,
           outstanding_amount: loanAmount,
           source_type: 'expense',
@@ -435,7 +445,7 @@ export const transactionsApi = {
     if (error) throw error;
 
     // If there's an existing related loan, update it
-    if (originalTx.created_loan_id && !isChangingToNonSelf) {
+    if (originalTx.created_loan_id && !needsLoanCreation) {
       const loanUpdates: any = {};
       if (tx.amount !== undefined) {
         // Calculate the difference and update outstanding
