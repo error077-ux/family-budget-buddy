@@ -48,6 +48,9 @@ const TransactionList: React.FC = () => {
     bank_id: '',
     credit_card_id: '',
   });
+  const [billFile, setBillFile] = useState<File | null>(null);
+  const [billPreview, setBillPreview] = useState<string | null>(null);
+  const formFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchData();
@@ -84,6 +87,7 @@ const TransactionList: React.FC = () => {
         bank_id: tx.bank_id,
         credit_card_id: '',
       });
+      setBillPreview(tx.bill_image_url || null);
     } else {
       setSelectedTx(null);
       setForm({
@@ -95,8 +99,36 @@ const TransactionList: React.FC = () => {
         bank_id: banks[0]?.id || '',
         credit_card_id: creditCards[0]?.id || '',
       });
+      setBillPreview(null);
     }
+    setBillFile(null);
     setDialogOpen(true);
+  };
+
+  const handleFormBillSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Error', description: 'Please select an image file', variant: 'destructive' });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Error', description: 'Image must be less than 5MB', variant: 'destructive' });
+      return;
+    }
+
+    setBillFile(file);
+    setBillPreview(URL.createObjectURL(file));
+  };
+
+  const clearFormBill = () => {
+    setBillFile(null);
+    setBillPreview(null);
+    if (formFileInputRef.current) {
+      formFileInputRef.current.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,6 +145,8 @@ const TransactionList: React.FC = () => {
         credit_card_id: form.source_type === 'credit_card' ? form.credit_card_id : undefined,
       };
 
+      let transactionId: string;
+
       if (selectedTx) {
         await transactionsApi.update(selectedTx.id, {
           date: payload.date,
@@ -121,9 +155,23 @@ const TransactionList: React.FC = () => {
           expense_owner: payload.expense_owner,
           bank_id: payload.bank_id || selectedTx.bank_id,
         });
+        transactionId = selectedTx.id;
+        
+        // Upload new bill if selected
+        if (billFile) {
+          await transactionsApi.uploadBillImage(transactionId, billFile);
+        }
+        
         toast({ title: 'Success', description: 'Transaction updated' });
       } else {
         const result = await transactionsApi.create(payload);
+        transactionId = result.id;
+        
+        // Upload bill if selected
+        if (billFile) {
+          await transactionsApi.uploadBillImage(transactionId, billFile);
+        }
+        
         if (result.created_loan_id) {
           const sourceInfo = form.source_type === 'bank' 
             ? banks.find(b => b.id === form.bank_id)?.name 
@@ -138,6 +186,8 @@ const TransactionList: React.FC = () => {
       }
 
       setDialogOpen(false);
+      setBillFile(null);
+      setBillPreview(null);
       fetchData();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to save transaction', variant: 'destructive' });
@@ -370,6 +420,58 @@ const TransactionList: React.FC = () => {
                 </Select>
               </div>
             )}
+
+            {/* Bill Upload */}
+            <div>
+              <Label>Bill Image (Optional)</Label>
+              <input
+                ref={formFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFormBillSelect}
+                className="hidden"
+              />
+              {billPreview ? (
+                <div className="mt-2 space-y-2">
+                  <div className="relative rounded-lg overflow-hidden border">
+                    <img 
+                      src={billPreview} 
+                      alt="Bill preview" 
+                      className="w-full max-h-32 object-contain bg-muted"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => formFileInputRef.current?.click()}
+                      className="flex-1 gap-2"
+                    >
+                      <Camera className="w-4 h-4" />
+                      Change
+                    </Button>
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      size="sm"
+                      onClick={clearFormBill}
+                      className="gap-2"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  onClick={() => formFileInputRef.current?.click()}
+                  className="mt-2 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                >
+                  <Camera className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Click to add bill photo</p>
+                </div>
+              )}
+            </div>
             
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">Cancel</Button>
