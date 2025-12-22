@@ -14,16 +14,297 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          created_at: string
+          id: string
+          pin_hash: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pin_hash: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pin_hash?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      bank_ledger: {
+        Row: {
+          balance_after: number
+          bank_id: string
+          created_at: string
+          credit: number
+          date: string
+          debit: number
+          description: string
+          id: string
+          reference_id: string | null
+          reference_type: string | null
+        }
+        Insert: {
+          balance_after?: number
+          bank_id: string
+          created_at?: string
+          credit?: number
+          date?: string
+          debit?: number
+          description: string
+          id?: string
+          reference_id?: string | null
+          reference_type?: string | null
+        }
+        Update: {
+          balance_after?: number
+          bank_id?: string
+          created_at?: string
+          credit?: number
+          date?: string
+          debit?: number
+          description?: string
+          id?: string
+          reference_id?: string | null
+          reference_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_ledger_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "banks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      banks: {
+        Row: {
+          account_number: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          account_number: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          account_number?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      credit_cards: {
+        Row: {
+          created_at: string
+          credit_limit: number
+          due_date: number
+          id: string
+          name: string
+          outstanding: number
+        }
+        Insert: {
+          created_at?: string
+          credit_limit: number
+          due_date?: number
+          id?: string
+          name: string
+          outstanding?: number
+        }
+        Update: {
+          created_at?: string
+          credit_limit?: number
+          due_date?: number
+          id?: string
+          name?: string
+          outstanding?: number
+        }
+        Relationships: []
+      }
+      ipo_applications: {
+        Row: {
+          amount: number
+          application_date: string
+          bank_id: string
+          company_name: string
+          created_at: string
+          id: string
+          shares_allotted: number | null
+          shares_applied: number
+          status: Database["public"]["Enums"]["ipo_status"]
+        }
+        Insert: {
+          amount: number
+          application_date?: string
+          bank_id: string
+          company_name: string
+          created_at?: string
+          id?: string
+          shares_allotted?: number | null
+          shares_applied: number
+          status?: Database["public"]["Enums"]["ipo_status"]
+        }
+        Update: {
+          amount?: number
+          application_date?: string
+          bank_id?: string
+          company_name?: string
+          created_at?: string
+          id?: string
+          shares_allotted?: number | null
+          shares_applied?: number
+          status?: Database["public"]["Enums"]["ipo_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipo_applications_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "banks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loans: {
+        Row: {
+          borrower_name: string
+          created_at: string
+          id: string
+          is_paid: boolean
+          outstanding_amount: number
+          principal_amount: number
+          source_id: string | null
+          source_type: string
+        }
+        Insert: {
+          borrower_name: string
+          created_at?: string
+          id?: string
+          is_paid?: boolean
+          outstanding_amount: number
+          principal_amount: number
+          source_id?: string | null
+          source_type?: string
+        }
+        Update: {
+          borrower_name?: string
+          created_at?: string
+          id?: string
+          is_paid?: boolean
+          outstanding_amount?: number
+          principal_amount?: number
+          source_id?: string | null
+          source_type?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          is_recurring: boolean
+          is_sent: boolean
+          message: string
+          recurrence_day: number | null
+          scheduled_date: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          is_recurring?: boolean
+          is_sent?: boolean
+          message: string
+          recurrence_day?: number | null
+          scheduled_date: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          is_recurring?: boolean
+          is_sent?: boolean
+          message?: string
+          recurrence_day?: number | null
+          scheduled_date?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          bank_id: string
+          created_at: string
+          created_loan_id: string | null
+          date: string
+          description: string
+          expense_owner: string
+          id: string
+        }
+        Insert: {
+          amount: number
+          bank_id: string
+          created_at?: string
+          created_loan_id?: string | null
+          date?: string
+          description: string
+          expense_owner?: string
+          id?: string
+        }
+        Update: {
+          amount?: number
+          bank_id?: string
+          created_at?: string
+          created_loan_id?: string | null
+          date?: string
+          description?: string
+          expense_owner?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_bank_id_fkey"
+            columns: ["bank_id"]
+            isOneToOne: false
+            referencedRelation: "banks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_ledger_entry: {
+        Args: {
+          p_bank_id: string
+          p_credit?: number
+          p_date: string
+          p_debit?: number
+          p_description: string
+          p_reference_id?: string
+          p_reference_type?: string
+        }
+        Returns: string
+      }
+      get_bank_balance: { Args: { p_bank_id: string }; Returns: number }
     }
     Enums: {
-      [_ in never]: never
+      ipo_status: "APPLIED" | "ALLOTTED" | "REFUNDED"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +431,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ipo_status: ["APPLIED", "ALLOTTED", "REFUNDED"],
+    },
   },
 } as const

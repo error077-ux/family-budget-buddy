@@ -11,7 +11,7 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { dashboardApi, type Transaction, type DashboardStats } from '@/api/endpoints';
+import { dashboardApi, type Transaction } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate } from '@/utils/formatDate';
 
@@ -47,7 +47,13 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, color }) 
 };
 
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [stats, setStats] = useState<{
+    total_balance: number;
+    total_outstanding_loans: number;
+    total_credit_outstanding: number;
+    pending_ipos: number;
+    recent_transactions: Transaction[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -55,9 +61,9 @@ const Dashboard: React.FC = () => {
     const fetchStats = async () => {
       try {
         const response = await dashboardApi.getStats();
-        setStats(response.data);
+        setStats(response);
       } catch (err: any) {
-        // If dashboard endpoint doesn't exist, show empty state
+        console.error('Dashboard error:', err);
         setError('Unable to load dashboard data');
       } finally {
         setLoading(false);
