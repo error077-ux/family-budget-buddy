@@ -15,6 +15,7 @@ import {
   X,
   Wallet,
   Users,
+  Settings,
 } from 'lucide-react';
 
 const navItems = [
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/ipo', icon: TrendingUp, label: 'IPO' },
   { path: '/notifications', icon: Bell, label: 'Notifications' },
   { path: '/exports', icon: Download, label: 'Exports' },
+  { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 const AppLayout: React.FC = () => {
