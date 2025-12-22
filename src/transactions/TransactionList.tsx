@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search } from 'lucide-react';
-import { transactionsApi, banksApi, creditCardsApi, type Transaction, type Bank, type CreditCard } from '@/api/supabase-api';
+import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search, UserPlus } from 'lucide-react';
+import { transactionsApi, banksApi, creditCardsApi, personsApi, type Transaction, type Bank, type CreditCard, type Person } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate, getTodayIST } from '@/utils/formatDate';
 import { useToast } from '@/hooks/use-toast';
@@ -25,12 +25,15 @@ const TransactionList: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
+  const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [addPersonDialogOpen, setAddPersonDialogOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [newPersonName, setNewPersonName] = useState('');
   const { toast } = useToast();
 
   const [form, setForm] = useState({
@@ -49,14 +52,16 @@ const TransactionList: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [txData, bankData, cardData] = await Promise.all([
+      const [txData, bankData, cardData, personData] = await Promise.all([
         transactionsApi.getAll(),
         banksApi.getAll(),
         creditCardsApi.getAll(),
+        personsApi.getAll(),
       ]);
       setTransactions(txData);
       setBanks(bankData);
       setCreditCards(cardData);
+      setPersons(personData);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load transactions', variant: 'destructive' });
     } finally {
@@ -155,9 +160,30 @@ const TransactionList: React.FC = () => {
     }
   };
 
+  const handleAddPerson = async () => {
+    if (!newPersonName.trim()) return;
+    setSaving(true);
+    
+    try {
+      const person = await personsApi.create(newPersonName.trim());
+      setPersons(prev => [...prev, person]);
+      setForm(prev => ({ ...prev, expense_owner: person.name }));
+      setNewPersonName('');
+      setAddPersonDialogOpen(false);
+      toast({ title: 'Success', description: `Added ${person.name} to family members` });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to add person', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const filteredTransactions = transactions.filter(
     (tx) => tx.description.toLowerCase().includes(search.toLowerCase()) || tx.expense_owner.toLowerCase().includes(search.toLowerCase())
   );
+
+  const selectedPerson = persons.find(p => p.name === form.expense_owner);
+  const showLoanWarning = form.expense_owner && form.expense_owner !== 'Me' && !selectedPerson?.is_self;
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -207,6 +233,7 @@ const TransactionList: React.FC = () => {
         </div>
       </div>
 
+      {/* Transaction Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{selectedTx ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle></DialogHeader>
@@ -214,10 +241,26 @@ const TransactionList: React.FC = () => {
             <div><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required /></div>
             <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g., Groceries" required /></div>
             <div><Label>Amount (₹)</Label><Input type="number" step="0.01" min="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required /></div>
+            
+            {/* Expense Owner - Dropdown with Add New option */}
             <div>
               <Label>Expense Owner</Label>
-              <Input value={form.expense_owner} onChange={(e) => setForm({ ...form, expense_owner: e.target.value })} placeholder="Me" required />
-              {form.expense_owner && form.expense_owner !== 'Me' && (
+              <div className="flex gap-2">
+                <Select value={form.expense_owner} onValueChange={(v) => setForm({ ...form, expense_owner: v })}>
+                  <SelectTrigger className="flex-1"><SelectValue placeholder="Select person" /></SelectTrigger>
+                  <SelectContent>
+                    {persons.map((person) => (
+                      <SelectItem key={person.id} value={person.name}>
+                        {person.name} {person.is_self && <span className="text-muted-foreground">(Self)</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setAddPersonDialogOpen(true)}>
+                  <UserPlus className="w-4 h-4" />
+                </Button>
+              </div>
+              {showLoanWarning && (
                 <div className="flex items-center gap-2 mt-2 p-3 rounded-lg bg-warning/10 text-warning text-sm">
                   <AlertTriangle className="w-4 h-4 flex-shrink-0" /><span>A loan will be created for "{form.expense_owner}"</span>
                 </div>
@@ -263,6 +306,31 @@ const TransactionList: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Add Person Dialog */}
+      <Dialog open={addPersonDialogOpen} onOpenChange={setAddPersonDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Add Family Member</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Name</Label>
+              <Input 
+                value={newPersonName} 
+                onChange={(e) => setNewPersonName(e.target.value)} 
+                placeholder="e.g., Mathuram, Dad, Mom" 
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => { setAddPersonDialogOpen(false); setNewPersonName(''); }} className="flex-1">Cancel</Button>
+              <Button onClick={handleAddPerson} disabled={saving || !newPersonName.trim()} className="flex-1">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add Person'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Delete Transaction</DialogTitle></DialogHeader>

@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Wallet,
+  Users,
 } from 'lucide-react';
 
 const navItems = [
@@ -22,6 +23,7 @@ const navItems = [
   { path: '/loans', icon: HandCoins, label: 'Loans' },
   { path: '/banks', icon: Building2, label: 'Banks' },
   { path: '/credit-cards', icon: CreditCard, label: 'Credit Cards' },
+  { path: '/family', icon: Users, label: 'Family Members' },
   { path: '/ipo', icon: TrendingUp, label: 'IPO' },
   { path: '/notifications', icon: Bell, label: 'Notifications' },
   { path: '/exports', icon: Download, label: 'Exports' },

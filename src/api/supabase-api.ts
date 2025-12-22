@@ -93,6 +93,43 @@ export interface AppSettings {
   created_at: string;
 }
 
+export interface Person {
+  id: string;
+  name: string;
+  is_self: boolean;
+  created_at: string;
+}
+
+// ============ PERSONS ============
+export const personsApi = {
+  getAll: async (): Promise<Person[]> => {
+    const { data, error } = await supabase
+      .from('persons')
+      .select('*')
+      .order('is_self', { ascending: false })
+      .order('name');
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  create: async (name: string): Promise<Person> => {
+    const { data, error } = await supabase
+      .from('persons')
+      .insert({ name, is_self: false })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  delete: async (id: string) => {
+    const { error } = await supabase.from('persons').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 // ============ BANKS ============
 export const banksApi = {
   getAll: async (): Promise<Bank[]> => {
