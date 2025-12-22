@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/auth/AuthContext';
+import { useTheme } from '@/theme/ThemeContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { KeyRound, Shield, Loader2, Check, Eye, EyeOff } from 'lucide-react';
+import { KeyRound, Shield, Loader2, Check, Eye, EyeOff, Sun, Moon, Monitor, Palette } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import {
 
 const SettingsPage: React.FC = () => {
   const { setNewPin: updateAuthPin, login } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { toast } = useToast();
   
   const [showPinDialog, setShowPinDialog] = useState(false);
@@ -174,6 +176,53 @@ const SettingsPage: React.FC = () => {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
+        {/* Appearance Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Palette className="w-5 h-5 text-primary" />
+              Appearance
+            </CardTitle>
+            <CardDescription>
+              Customize the look and feel of the app
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <Label>Theme</Label>
+              <div className="grid grid-cols-3 gap-3">
+                <Button
+                  variant={theme === 'light' ? 'default' : 'outline'}
+                  className="flex flex-col gap-2 h-auto py-4"
+                  onClick={() => setTheme('light')}
+                >
+                  <Sun className="w-5 h-5" />
+                  <span className="text-xs">Light</span>
+                </Button>
+                <Button
+                  variant={theme === 'dark' ? 'default' : 'outline'}
+                  className="flex flex-col gap-2 h-auto py-4"
+                  onClick={() => setTheme('dark')}
+                >
+                  <Moon className="w-5 h-5" />
+                  <span className="text-xs">Dark</span>
+                </Button>
+                <Button
+                  variant={theme === 'system' ? 'default' : 'outline'}
+                  className="flex flex-col gap-2 h-auto py-4"
+                  onClick={() => setTheme('system')}
+                >
+                  <Monitor className="w-5 h-5" />
+                  <span className="text-xs">System</span>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Current: {resolvedTheme === 'dark' ? 'Dark mode' : 'Light mode'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Security Settings */}
         <Card>
           <CardHeader>
@@ -204,25 +253,25 @@ const SettingsPage: React.FC = () => {
         </Card>
 
         {/* App Info */}
-        <Card>
+        <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle>About</CardTitle>
             <CardDescription>
               Application information
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex justify-between py-2 border-b border-border">
-                <span className="text-muted-foreground">Version</span>
+          <CardContent>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="flex justify-between sm:flex-col sm:items-start p-3 rounded-lg bg-muted/50">
+                <span className="text-muted-foreground text-sm">Version</span>
                 <span className="font-medium">1.0.0</span>
               </div>
-              <div className="flex justify-between py-2 border-b border-border">
-                <span className="text-muted-foreground">Session Timeout</span>
+              <div className="flex justify-between sm:flex-col sm:items-start p-3 rounded-lg bg-muted/50">
+                <span className="text-muted-foreground text-sm">Session Timeout</span>
                 <span className="font-medium">24 hours</span>
               </div>
-              <div className="flex justify-between py-2">
-                <span className="text-muted-foreground">Data Storage</span>
+              <div className="flex justify-between sm:flex-col sm:items-start p-3 rounded-lg bg-muted/50">
+                <span className="text-muted-foreground text-sm">Data Storage</span>
                 <span className="font-medium">Cloud</span>
               </div>
             </div>
