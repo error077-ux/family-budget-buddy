@@ -391,18 +391,51 @@ export const transactionsApi = {
     
     if (fetchError) throw fetchError;
 
+    // Check if expense owner is changing from "Me" to someone else (need to create a loan)
+    const isChangingToNonSelf = tx.expense_owner !== undefined && 
+      tx.expense_owner !== 'Me' && 
+      originalTx.expense_owner === 'Me' &&
+      !originalTx.created_loan_id;
+
+    let createdLoanId: string | null = null;
+
+    if (isChangingToNonSelf) {
+      // Create a new loan for this transaction
+      const loanAmount = tx.amount ?? originalTx.amount;
+      const { data: loan, error: loanError } = await supabase
+        .from('loans')
+        .insert({
+          borrower_name: tx.expense_owner,
+          principal_amount: loanAmount,
+          outstanding_amount: loanAmount,
+          source_type: 'expense',
+          source_bank_id: tx.bank_id || originalTx.bank_id,
+          source_id: id,
+        })
+        .select()
+        .single();
+      
+      if (loanError) throw loanError;
+      createdLoanId = loan.id;
+    }
+
     // Update the transaction
+    const updateData: any = { ...tx };
+    if (createdLoanId) {
+      updateData.created_loan_id = createdLoanId;
+    }
+
     const { data, error } = await supabase
       .from('transactions')
-      .update(tx)
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();
     
     if (error) throw error;
 
-    // If there's a related loan, update it
-    if (originalTx.created_loan_id) {
+    // If there's an existing related loan, update it
+    if (originalTx.created_loan_id && !isChangingToNonSelf) {
       const loanUpdates: any = {};
       if (tx.amount !== undefined) {
         // Calculate the difference and update outstanding
