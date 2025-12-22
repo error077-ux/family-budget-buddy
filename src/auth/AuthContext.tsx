@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { settingsApi, hashPin } from '@/api/supabase-api';
 
+
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
