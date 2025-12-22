@@ -514,21 +514,21 @@ export const transactionsApi = {
     // Get transaction first to check for related loan
     const { data: tx } = await supabase
       .from('transactions')
-      .select('*')
+      .select('created_loan_id')
       .eq('id', id)
       .single();
 
-    // Delete related loan if exists
-    if (tx?.created_loan_id) {
-      await supabase.from('loans').delete().eq('id', tx.created_loan_id);
-    }
-
-    // Delete related ledger entry
-    await supabase
-      .from('bank_ledger')
-      .delete()
-      .eq('reference_type', 'transaction')
-      .eq('reference_id', id);
+    // Delete related loan and ledger entry in parallel
+    await Promise.all([
+      tx?.created_loan_id 
+        ? supabase.from('loans').delete().eq('id', tx.created_loan_id)
+        : Promise.resolve(),
+      supabase
+        .from('bank_ledger')
+        .delete()
+        .eq('reference_type', 'transaction')
+        .eq('reference_id', id)
+    ]);
 
     // Delete the transaction
     const { error } = await supabase.from('transactions').delete().eq('id', id);
