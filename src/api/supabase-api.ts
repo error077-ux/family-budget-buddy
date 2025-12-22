@@ -378,6 +378,16 @@ export const transactionsApi = {
     expense_owner: string;
     bank_id: string;
   }>) => {
+    // Get the original transaction first
+    const { data: originalTx, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (fetchError) throw fetchError;
+
+    // Update the transaction
     const { data, error } = await supabase
       .from('transactions')
       .update(tx)
@@ -386,10 +396,94 @@ export const transactionsApi = {
       .single();
     
     if (error) throw error;
+
+    // If there's a related loan, update it
+    if (originalTx.created_loan_id) {
+      const loanUpdates: any = {};
+      if (tx.amount !== undefined) {
+        // Calculate the difference and update outstanding
+        const amountDiff = tx.amount - originalTx.amount;
+        const { data: loan } = await supabase
+          .from('loans')
+          .select('outstanding_amount, principal_amount')
+          .eq('id', originalTx.created_loan_id)
+          .single();
+        
+        if (loan) {
+          loanUpdates.principal_amount = Number(loan.principal_amount) + amountDiff;
+          loanUpdates.outstanding_amount = Math.max(0, Number(loan.outstanding_amount) + amountDiff);
+        }
+      }
+      if (tx.expense_owner !== undefined) {
+        loanUpdates.borrower_name = tx.expense_owner;
+      }
+      
+      if (Object.keys(loanUpdates).length > 0) {
+        await supabase
+          .from('loans')
+          .update(loanUpdates)
+          .eq('id', originalTx.created_loan_id);
+      }
+    }
+
+    // Update bank ledger entry if amount or description changed
+    if (tx.amount !== undefined || tx.description !== undefined || tx.date !== undefined) {
+      const ledgerUpdates: any = {};
+      if (tx.description !== undefined) ledgerUpdates.description = tx.description;
+      if (tx.date !== undefined) ledgerUpdates.date = tx.date;
+      
+      if (tx.amount !== undefined) {
+        // Get current ledger entry
+        const { data: ledgerEntry } = await supabase
+          .from('bank_ledger')
+          .select('*')
+          .eq('reference_type', 'transaction')
+          .eq('reference_id', id)
+          .single();
+        
+        if (ledgerEntry) {
+          const amountDiff = tx.amount - originalTx.amount;
+          ledgerUpdates.debit = tx.amount;
+          ledgerUpdates.balance_after = Number(ledgerEntry.balance_after) - amountDiff;
+          
+          await supabase
+            .from('bank_ledger')
+            .update(ledgerUpdates)
+            .eq('id', ledgerEntry.id);
+        }
+      } else if (Object.keys(ledgerUpdates).length > 0) {
+        await supabase
+          .from('bank_ledger')
+          .update(ledgerUpdates)
+          .eq('reference_type', 'transaction')
+          .eq('reference_id', id);
+      }
+    }
+
     return data;
   },
 
   delete: async (id: string) => {
+    // Get transaction first to check for related loan
+    const { data: tx } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    // Delete related loan if exists
+    if (tx?.created_loan_id) {
+      await supabase.from('loans').delete().eq('id', tx.created_loan_id);
+    }
+
+    // Delete related ledger entry
+    await supabase
+      .from('bank_ledger')
+      .delete()
+      .eq('reference_type', 'transaction')
+      .eq('reference_id', id);
+
+    // Delete the transaction
     const { error } = await supabase.from('transactions').delete().eq('id', id);
     if (error) throw error;
   },
