@@ -1,14 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Loader2, User, UserCheck } from 'lucide-react';
-import { personsApi, type Person } from '@/api/supabase-api';
+import { Users, Plus, Trash2, Loader2, User, UserCheck, Banknote, CreditCard } from 'lucide-react';
+import { personsApi, loansApi, type Person, type Loan } from '@/api/supabase-api';
+import { formatMoney } from '@/utils/formatMoney';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+interface LoanSummary {
+  totalOutstanding: number;
+  totalPrincipal: number;
+  loanCount: number;
+  byBank: { bankName: string; bankId: string; outstanding: number; count: number }[];
+  byCreditCard: { cardName: string; cardId: string; outstanding: number; count: number }[];
+}
+
 const PersonList: React.FC = () => {
   const [persons, setPersons] = useState<Person[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -23,13 +33,63 @@ const PersonList: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const data = await personsApi.getAll();
-      setPersons(data);
+      const [personData, loanData] = await Promise.all([
+        personsApi.getAll(),
+        loansApi.getAll()
+      ]);
+      setPersons(personData);
+      setLoans(loanData);
     } catch {
-      toast({ title: 'Error', description: 'Failed to load family members', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Failed to load data', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
+  };
+
+  // Calculate loan summary for a specific person
+  const getLoanSummary = (personName: string): LoanSummary => {
+    const personLoans = loans.filter(l => l.borrower_name === personName && !l.is_paid);
+    
+    const byBankMap = new Map<string, { bankName: string; bankId: string; outstanding: number; count: number }>();
+    const byCreditCardMap = new Map<string, { cardName: string; cardId: string; outstanding: number; count: number }>();
+    
+    personLoans.forEach(loan => {
+      if (loan.source_bank_id && loan.source_bank_name) {
+        const existing = byBankMap.get(loan.source_bank_id);
+        if (existing) {
+          existing.outstanding += Number(loan.outstanding_amount);
+          existing.count += 1;
+        } else {
+          byBankMap.set(loan.source_bank_id, {
+            bankName: loan.source_bank_name,
+            bankId: loan.source_bank_id,
+            outstanding: Number(loan.outstanding_amount),
+            count: 1
+          });
+        }
+      } else if (loan.source_credit_card_id && loan.source_credit_card_name) {
+        const existing = byCreditCardMap.get(loan.source_credit_card_id);
+        if (existing) {
+          existing.outstanding += Number(loan.outstanding_amount);
+          existing.count += 1;
+        } else {
+          byCreditCardMap.set(loan.source_credit_card_id, {
+            cardName: loan.source_credit_card_name,
+            cardId: loan.source_credit_card_id,
+            outstanding: Number(loan.outstanding_amount),
+            count: 1
+          });
+        }
+      }
+    });
+    
+    return {
+      totalOutstanding: personLoans.reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
+      totalPrincipal: personLoans.reduce((sum, l) => sum + Number(l.principal_amount), 0),
+      loanCount: personLoans.length,
+      byBank: Array.from(byBankMap.values()),
+      byCreditCard: Array.from(byCreditCardMap.values())
+    };
   };
 
   const handleAddPerson = async () => {
@@ -81,33 +141,87 @@ const PersonList: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {persons.map((person) => (
-          <div key={person.id} className="card-finance p-5">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-xl ${person.is_self ? 'bg-primary/10' : 'bg-muted'}`}>
-                {person.is_self ? (
-                  <UserCheck className="w-6 h-6 text-primary" />
-                ) : (
-                  <User className="w-6 h-6 text-muted-foreground" />
+        {persons.map((person) => {
+          const loanSummary = getLoanSummary(person.name);
+          const hasLoans = loanSummary.loanCount > 0;
+          
+          return (
+            <div key={person.id} className="card-finance p-5">
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-xl ${person.is_self ? 'bg-primary/10' : 'bg-muted'}`}>
+                  {person.is_self ? (
+                    <UserCheck className="w-6 h-6 text-primary" />
+                  ) : (
+                    <User className="w-6 h-6 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">{person.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {person.is_self ? 'Self (No loan created)' : 'Loan will be created'}
+                  </p>
+                </div>
+                {!person.is_self && (
+                  <button 
+                    onClick={() => { setSelectedPerson(person); setDeleteDialogOpen(true); }}
+                    className="p-2 rounded-lg hover:bg-destructive/10"
+                  >
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </button>
                 )}
               </div>
-              <div className="flex-1">
-                <h3 className="font-semibold">{person.name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {person.is_self ? 'Self (No loan created)' : 'Loan will be created'}
-                </p>
-              </div>
-              {!person.is_self && (
-                <button 
-                  onClick={() => { setSelectedPerson(person); setDeleteDialogOpen(true); }}
-                  className="p-2 rounded-lg hover:bg-destructive/10"
-                >
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                </button>
+              
+              {/* Loan Summary for non-self persons */}
+              {!person.is_self && hasLoans && (
+                <div className="mt-4 pt-4 border-t border-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Total Outstanding</span>
+                    <span className="font-bold text-destructive mono">{formatMoney(loanSummary.totalOutstanding)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Pending Loans</span>
+                    <span className="font-semibold text-warning">{loanSummary.loanCount}</span>
+                  </div>
+                  
+                  {/* Bank-wise breakdown */}
+                  {loanSummary.byBank.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase">By Bank</p>
+                      {loanSummary.byBank.map((bank) => (
+                        <div key={bank.bankId} className="flex items-center gap-2 p-2 rounded-lg bg-primary/5">
+                          <Banknote className="w-4 h-4 text-primary" />
+                          <span className="text-sm flex-1">{bank.bankName}</span>
+                          <span className="text-sm font-semibold text-destructive mono">{formatMoney(bank.outstanding)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Credit Card-wise breakdown */}
+                  {loanSummary.byCreditCard.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase">By Credit Card</p>
+                      {loanSummary.byCreditCard.map((card) => (
+                        <div key={card.cardId} className="flex items-center gap-2 p-2 rounded-lg bg-warning/5">
+                          <CreditCard className="w-4 h-4 text-warning" />
+                          <span className="text-sm flex-1">{card.cardName}</span>
+                          <span className="text-sm font-semibold text-destructive mono">{formatMoney(card.outstanding)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* No loans message */}
+              {!person.is_self && !hasLoans && (
+                <div className="mt-4 pt-4 border-t border-border">
+                  <p className="text-sm text-muted-foreground text-center">No pending loans</p>
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {persons.length === 0 && (
