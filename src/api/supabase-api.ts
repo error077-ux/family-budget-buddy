@@ -42,6 +42,11 @@ export interface Loan {
   is_paid: boolean;
   source_type: string;
   source_id: string | null;
+  source_bank_id: string | null;
+  source_bank_name?: string;
+  source_bank_account?: string;
+  source_credit_card_id: string | null;
+  source_credit_card_name?: string;
   created_at: string;
 }
 
@@ -215,11 +220,12 @@ export const transactionsApi = {
     description: string;
     amount: number;
     expense_owner: string;
-    bank_id: string;
+    bank_id?: string;
+    credit_card_id?: string;
   }): Promise<Transaction & { created_loan_id?: string }> => {
     let createdLoanId: string | null = null;
 
-    // If expense owner is not "Me", create a loan
+    // If expense owner is not "Me", create a loan with source bank/card info
     if (tx.expense_owner !== 'Me') {
       const { data: loan, error: loanError } = await supabase
         .from('loans')
@@ -227,7 +233,9 @@ export const transactionsApi = {
           borrower_name: tx.expense_owner,
           principal_amount: tx.amount,
           outstanding_amount: tx.amount,
-          source_type: 'expense',
+          source_type: tx.credit_card_id ? 'credit_card' : 'expense',
+          source_bank_id: tx.bank_id || null,
+          source_credit_card_id: tx.credit_card_id || null,
         })
         .select()
         .single();
@@ -236,7 +244,52 @@ export const transactionsApi = {
       createdLoanId = loan.id;
     }
 
-    // Create the transaction
+    // Handle credit card transaction
+    if (tx.credit_card_id) {
+      // Get card
+      const { data: card, error: cardError } = await supabase
+        .from('credit_cards')
+        .select('*')
+        .eq('id', tx.credit_card_id)
+        .single();
+      
+      if (cardError) throw cardError;
+      
+      // Update outstanding
+      await supabase
+        .from('credit_cards')
+        .update({ outstanding: Number(card.outstanding) + tx.amount })
+        .eq('id', tx.credit_card_id);
+      
+      // Create the transaction (bank_id is required, use a placeholder)
+      const { data: banks } = await supabase.from('banks').select('id').limit(1);
+      const placeholderBankId = banks?.[0]?.id;
+      
+      if (!placeholderBankId) throw new Error('No bank available');
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({
+          date: tx.date,
+          description: tx.description,
+          amount: tx.amount,
+          expense_owner: tx.expense_owner,
+          bank_id: placeholderBankId, // Required field but not used for CC
+          created_loan_id: createdLoanId,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      if (createdLoanId) {
+        await supabase.from('loans').update({ source_id: data.id }).eq('id', createdLoanId);
+      }
+      
+      return { ...data, created_loan_id: createdLoanId };
+    }
+
+    // Create the transaction for bank payment
     const { data, error } = await supabase
       .from('transactions')
       .insert({
@@ -244,7 +297,7 @@ export const transactionsApi = {
         description: tx.description,
         amount: tx.amount,
         expense_owner: tx.expense_owner,
-        bank_id: tx.bank_id,
+        bank_id: tx.bank_id!,
         created_loan_id: createdLoanId,
       })
       .select()
@@ -261,14 +314,14 @@ export const transactionsApi = {
     const { data: ledgerData } = await supabase
       .from('bank_ledger')
       .select('balance_after')
-      .eq('bank_id', tx.bank_id)
+      .eq('bank_id', tx.bank_id!)
       .order('created_at', { ascending: false })
       .limit(1);
     
     const currentBalance = ledgerData?.[0]?.balance_after || 0;
     
     await supabase.from('bank_ledger').insert({
-      bank_id: tx.bank_id,
+      bank_id: tx.bank_id!,
       date: tx.date,
       description: tx.description,
       debit: tx.amount,
@@ -310,11 +363,16 @@ export const loansApi = {
   getAll: async (): Promise<Loan[]> => {
     const { data, error } = await supabase
       .from('loans')
-      .select('*')
+      .select(`*, banks:source_bank_id(name, account_number), credit_cards:source_credit_card_id(name)`)
       .order('created_at', { ascending: false });
     
     if (error) throw error;
-    return data || [];
+    return (data || []).map(loan => ({
+      ...loan,
+      source_bank_name: (loan.banks as any)?.name,
+      source_bank_account: (loan.banks as any)?.account_number,
+      source_credit_card_name: (loan.credit_cards as any)?.name,
+    }));
   },
 
   repay: async (id: string, payment: { amount: number; bank_id: string; date: string }) => {
