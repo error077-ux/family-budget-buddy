@@ -70,6 +70,8 @@ export interface IPO {
   amount: number;
   shares_applied: number;
   shares_allotted: number | null;
+  issue_price: number | null;
+  listing_price: number | null;
   status: IPOStatus;
   bank_id: string;
   bank_name?: string;
@@ -698,6 +700,7 @@ export const ipoApi = {
     allotment_date: string;
     amount: number;
     shares_applied: number;
+    issue_price: number;
     bank_id: string;
   }) => {
     // Create IPO application
@@ -709,6 +712,7 @@ export const ipoApi = {
         allotment_date: ipo.allotment_date,
         amount: ipo.amount,
         shares_applied: ipo.shares_applied,
+        issue_price: ipo.issue_price,
         bank_id: ipo.bank_id,
         status: 'APPLIED',
       })
@@ -829,6 +833,18 @@ export const ipoApi = {
       reference_id: id,
     });
     
+    return data;
+  },
+
+  updateListingPrice: async (id: string, listing_price: number) => {
+    const { data, error } = await supabase
+      .from('ipo_applications')
+      .update({ listing_price })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
     return data;
   },
 };
