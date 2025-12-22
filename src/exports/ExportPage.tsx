@@ -5,7 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { transactionsApi, loansApi, banksApi, creditCardsApi, ipoApi, notificationsApi } from '@/api/supabase-api';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const ExportPage: React.FC = () => {
