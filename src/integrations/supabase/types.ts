@@ -182,6 +182,8 @@ export type Database = {
           is_paid: boolean
           outstanding_amount: number
           principal_amount: number
+          source_bank_id: string | null
+          source_credit_card_id: string | null
           source_id: string | null
           source_type: string
         }
@@ -192,6 +194,8 @@ export type Database = {
           is_paid?: boolean
           outstanding_amount: number
           principal_amount: number
+          source_bank_id?: string | null
+          source_credit_card_id?: string | null
           source_id?: string | null
           source_type?: string
         }
@@ -202,10 +206,27 @@ export type Database = {
           is_paid?: boolean
           outstanding_amount?: number
           principal_amount?: number
+          source_bank_id?: string | null
+          source_credit_card_id?: string | null
           source_id?: string | null
           source_type?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "loans_source_bank_id_fkey"
+            columns: ["source_bank_id"]
+            isOneToOne: false
+            referencedRelation: "banks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loans_source_credit_card_id_fkey"
+            columns: ["source_credit_card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notifications: {
         Row: {

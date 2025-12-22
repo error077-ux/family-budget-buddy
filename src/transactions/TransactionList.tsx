@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search } from 'lucide-react';
-import { transactionsApi, banksApi, type Transaction, type Bank } from '@/api/supabase-api';
+import { transactionsApi, banksApi, creditCardsApi, type Transaction, type Bank, type CreditCard } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate, getTodayIST } from '@/utils/formatDate';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ import {
 const TransactionList: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -37,7 +38,9 @@ const TransactionList: React.FC = () => {
     description: '',
     amount: '',
     expense_owner: 'Me',
+    source_type: 'bank' as 'bank' | 'credit_card',
     bank_id: '',
+    credit_card_id: '',
   });
 
   useEffect(() => {
@@ -46,12 +49,14 @@ const TransactionList: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [txData, bankData] = await Promise.all([
+      const [txData, bankData, cardData] = await Promise.all([
         transactionsApi.getAll(),
         banksApi.getAll(),
+        creditCardsApi.getAll(),
       ]);
       setTransactions(txData);
       setBanks(bankData);
+      setCreditCards(cardData);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load transactions', variant: 'destructive' });
     } finally {
@@ -67,7 +72,9 @@ const TransactionList: React.FC = () => {
         description: tx.description,
         amount: String(tx.amount),
         expense_owner: tx.expense_owner,
+        source_type: 'bank',
         bank_id: tx.bank_id,
+        credit_card_id: '',
       });
     } else {
       setSelectedTx(null);
@@ -76,7 +83,9 @@ const TransactionList: React.FC = () => {
         description: '',
         amount: '',
         expense_owner: 'Me',
+        source_type: 'bank',
         bank_id: banks[0]?.id || '',
+        credit_card_id: creditCards[0]?.id || '',
       });
     }
     setDialogOpen(true);
@@ -92,16 +101,29 @@ const TransactionList: React.FC = () => {
         description: form.description,
         amount: parseFloat(form.amount),
         expense_owner: form.expense_owner,
-        bank_id: form.bank_id,
+        bank_id: form.source_type === 'bank' ? form.bank_id : undefined,
+        credit_card_id: form.source_type === 'credit_card' ? form.credit_card_id : undefined,
       };
 
       if (selectedTx) {
-        await transactionsApi.update(selectedTx.id, payload);
+        await transactionsApi.update(selectedTx.id, {
+          date: payload.date,
+          description: payload.description,
+          amount: payload.amount,
+          expense_owner: payload.expense_owner,
+          bank_id: payload.bank_id || selectedTx.bank_id,
+        });
         toast({ title: 'Success', description: 'Transaction updated' });
       } else {
         const result = await transactionsApi.create(payload);
         if (result.created_loan_id) {
-          toast({ title: 'Transaction & Loan Created', description: `A loan was automatically created for ${form.expense_owner}` });
+          const sourceInfo = form.source_type === 'bank' 
+            ? banks.find(b => b.id === form.bank_id)?.name 
+            : creditCards.find(c => c.id === form.credit_card_id)?.name;
+          toast({ 
+            title: 'Transaction & Loan Created', 
+            description: `A loan was created for ${form.expense_owner}. Paid via ${sourceInfo}` 
+          });
         } else {
           toast({ title: 'Success', description: 'Transaction added' });
         }
@@ -201,13 +223,38 @@ const TransactionList: React.FC = () => {
                 </div>
               )}
             </div>
-            <div>
-              <Label>Bank Account</Label>
-              <Select value={form.bank_id} onValueChange={(v) => setForm({ ...form, bank_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select bank" /></SelectTrigger>
-                <SelectContent>{banks.map((bank) => <SelectItem key={bank.id} value={bank.id}>{bank.name} ({formatMoney(bank.balance)})</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
+            
+            {!selectedTx && (
+              <div>
+                <Label>Payment Source</Label>
+                <Select value={form.source_type} onValueChange={(v: 'bank' | 'credit_card') => setForm({ ...form, source_type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bank">Bank Account</SelectItem>
+                    <SelectItem value="credit_card">Credit Card</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            {form.source_type === 'bank' ? (
+              <div>
+                <Label>Bank Account</Label>
+                <Select value={form.bank_id} onValueChange={(v) => setForm({ ...form, bank_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select bank" /></SelectTrigger>
+                  <SelectContent>{banks.map((bank) => <SelectItem key={bank.id} value={bank.id}>{bank.name} ({formatMoney(bank.balance)})</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            ) : !selectedTx && (
+              <div>
+                <Label>Credit Card</Label>
+                <Select value={form.credit_card_id} onValueChange={(v) => setForm({ ...form, credit_card_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select credit card" /></SelectTrigger>
+                  <SelectContent>{creditCards.map((card) => <SelectItem key={card.id} value={card.id}>{card.name} (Available: {formatMoney(card.available_credit)})</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
+            
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">Cancel</Button>
               <Button type="submit" disabled={saving} className="flex-1">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedTx ? 'Update' : 'Add Transaction'}</Button>
