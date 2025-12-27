@@ -27,9 +27,10 @@ async function sendTelegramMessage(chatId: number, text: string, parseMode = 'HT
   return response.json();
 }
 
-// Set bot menu commands
+// Set bot menu commands and menu button
 async function setBotCommands() {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`;
+  // Set commands
+  const commandsUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`;
   const commands = [
     { command: 'start', description: '🏠 Start & show all commands' },
     { command: 'tx', description: '💸 Add transaction: /tx 500 Groceries @Bank' },
@@ -48,12 +49,25 @@ async function setBotCommands() {
     { command: 'addcard', description: '💳 Add card: /addcard Name Limit DueDate' },
   ];
   
-  const response = await fetch(url, {
+  const cmdResponse = await fetch(commandsUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commands }),
   });
-  console.log('Set bot commands:', await response.json());
+  console.log('Set bot commands:', await cmdResponse.json());
+  
+  // Set menu button to show commands
+  const menuUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setChatMenuButton`;
+  const menuResponse = await fetch(menuUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      menu_button: {
+        type: 'commands'
+      }
+    }),
+  });
+  console.log('Set menu button:', await menuResponse.json());
 }
 
 // Format money
