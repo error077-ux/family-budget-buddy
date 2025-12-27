@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Building2, Plus, Pencil, Trash2, History, Loader2 } from 'lucide-react';
 import { banksApi, type Bank, type BankLedgerEntry } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate } from '@/utils/formatDate';
 import { useToast } from '@/hooks/use-toast';
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,13 +23,19 @@ const BankList: React.FC = () => {
   const { toast } = useToast();
   const [form, setForm] = useState({ name: '', account_number: '', opening_balance: '' });
 
-  useEffect(() => { fetchBanks(); }, []);
-
-  const fetchBanks = async () => {
+  const fetchBanks = useCallback(async () => {
     try { setBanks(await banksApi.getAll()); }
     catch { toast({ title: 'Error', description: 'Failed to load banks', variant: 'destructive' }); }
     finally { setLoading(false); }
-  };
+  }, [toast]);
+
+  useEffect(() => { fetchBanks(); }, [fetchBanks]);
+
+  // Subscribe to realtime updates from Telegram bot
+  useRealtimeSubscription({
+    tables: ['banks', 'bank_ledger'],
+    onUpdate: fetchBanks,
+  });
 
   const handleOpenDialog = (bank?: Bank) => {
     if (bank) { setSelectedBank(bank); setForm({ name: bank.name, account_number: bank.account_number, opening_balance: '' }); }

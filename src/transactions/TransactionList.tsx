@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Search, UserPlus, Camera, X, Image } from 'lucide-react';
 import { transactionsApi, banksApi, creditCardsApi, personsApi, type Transaction, type Bank, type CreditCard, type Person } from '@/api/supabase-api';
 import { formatMoney } from '@/utils/formatMoney';
 import { formatDate, getTodayIST } from '@/utils/formatDate';
 import { useToast } from '@/hooks/use-toast';
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import {
   Dialog,
   DialogContent,
@@ -52,11 +53,7 @@ const TransactionList: React.FC = () => {
   const [billPreview, setBillPreview] = useState<string | null>(null);
   const formFileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [txData, bankData, cardData, personData] = await Promise.all([
         transactionsApi.getAll(),
@@ -73,7 +70,18 @@ const TransactionList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Subscribe to realtime updates from Telegram bot
+  useRealtimeSubscription({
+    tables: ['transactions', 'banks', 'bank_ledger', 'loans', 'persons'],
+    onUpdate: fetchData,
+  });
+
 
   const handleOpenDialog = (tx?: Transaction) => {
     if (tx) {
