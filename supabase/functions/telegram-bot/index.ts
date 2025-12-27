@@ -27,6 +27,27 @@ async function sendTelegramMessage(chatId: number, text: string, parseMode = 'HT
   return response.json();
 }
 
+// Set bot menu commands
+async function setBotCommands() {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`;
+  const commands = [
+    { command: 'start', description: '🏠 Start & show help' },
+    { command: 'tx', description: '💸 Add transaction: /tx 500 Groceries @Bank' },
+    { command: 'loan', description: '📋 Create loan: /loan John 1000' },
+    { command: 'repay', description: '💰 Record repayment: /repay John 500 @Bank' },
+    { command: 'summary', description: '📊 View financial summary' },
+    { command: 'banks', description: '🏦 List all banks with balances' },
+    { command: 'loans', description: '📋 List active loans' },
+  ];
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commands }),
+  });
+  console.log('Set bot commands:', await response.json());
+}
+
 // Format money
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -230,6 +251,9 @@ serve(async (req) => {
     
     // /start command
     if (text === '/start') {
+      // Set bot menu commands
+      await setBotCommands();
+      
       await sendTelegramMessage(chatId, `
 🏦 <b>Welcome to Budget Planner Bot!</b>
 
